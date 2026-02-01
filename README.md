@@ -76,7 +76,6 @@ This turned out to be a valuable lesson in mechanical constraints and the import
 This was my first PCB design, and it taught me a lot about planning, layout constraints, and thinking about both electronics and physical integration at the same time.
 
 ## PCB Images
-
 <table>
   <tr>
     <td align="center">
@@ -90,5 +89,12 @@ This was my first PCB design, and it taught me a lot about planning, layout cons
   </tr>
 </table>
 
+## CAD & Chassis Design
+The LED matrix panels are daisy-chained, which meant the project quickly became more than just a small dev board on a table.
+I wanted to design a proper enclosure that could house everything cleanly and turn the system into a single, cohesive unit.
 
+The custom chassis was designed in CAD to fit the LED panels, PCB, and user controls, with attention to clearances, mounting points, and cable routing.
+The focus was on creating a sturdy, clean enclosure rather than optimizing for the smallest possible size.
+
+The chassis was 3D-printed and iterated alongside the electronics design, highlighting the importance of mechanical design even in relatively simple embedded systems.
 
