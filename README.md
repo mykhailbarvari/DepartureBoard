@@ -76,10 +76,19 @@ This turned out to be a valuable lesson in mechanical constraints and the import
 This was my first PCB design, and it taught me a lot about planning, layout constraints, and thinking about both electronics and physical integration at the same time.
 
 ## PCB Images
-**3D PCB Model**
-<img src="assets\CustomPCB_3Dmodel.png">
 
-**PCB Layout**
-<img src="assets\CustomPCB_layout.png">
+<table>
+  <tr>
+    <td align="center">
+      <b>3D PCB Model</b><br>
+      <img src="assets/CustomPCB_3Dmodel.png" width="450">
+    </td>
+    <td align="center">
+      <b>PCB Layout</b><br>
+      <img src="assets/CustomPCB_layout.png" width="450">
+    </td>
+  </tr>
+</table>
+
 
 
