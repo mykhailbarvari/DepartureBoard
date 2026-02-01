@@ -4,20 +4,24 @@
 
 A real-time LED departure board built as my first personal embedded systems project.
 
-The system runs on an "ESP32-S3 Nano" by Waveshare and drives two daisy-chained HUB75E LED matrix panels to display live public transport departure data.
+The system runs on a "ESP32-S3 Nano" by Waveshare and drives two daisy-chained HUB75E LED matrix panels to display live public transport departure data.
 
 This project marks as my first personal project. Transitioning from theory to building real, physical systems.
 
+---
+
 ## Why this project?
-After finishing the courses IS1200 and IS1300 at KTH, I wanted to move beyond course assignments and theory to build something that i have more practical use of every day.
+After finishing the courses IS1300 Embedded Systems and IS1200 Computer Hardware Engineering at my university, I wanted to move beyond course assignments and theory and build something with practical, everyday use.
 
-During the winter, I realized how useful a real-time departure display would be, due to the irregular traffic caused by the snow.
-After some inspiration from existing transit boards, I decided to design and build my own — from hardware to software.
+During the winter, bus traffic became irregular due to snow, and I often found myself standing in the cold because the scheduled departure times were inaccurate.
+That’s when I realized how useful a real-time, always-on departure display would be.
 
-This project became a way to apply my coursework to a real-world problem.
+Beyond functionality, I wanted to build something I would actually want to keep in my home. Something useful, but also nice to look at and be proud to show friends.
 
+While searching for inspiration online, I stumbled upon the departure boards built by 
+[T-Skylt](https://shop.t-skylt.se/). Their work was a major source of inspiration for this project, especially in terms of concept and overall aesthetic.
 
-Everything here was learned by building, breaking, and fixing.
+---
 
 ## What does it do?
 - Fetches real-time departure data from the Trafiklab API
@@ -26,22 +30,28 @@ Everything here was learned by building, breaking, and fixing.
 - Uses a rotary encoder to navigate a simple on-device UI menu
 - Runs separate FreeRTOS tasks for data fetching, display rendering, and UI logic
 
+---
 
 ## Hardware
 - [ESP32-S3 Nano (Waveshare)](https://www.waveshare.com/wiki/ESP32-S3-Nano)
 - [RGB LED Matrix P2 64×64 (HUB75E)](https://www.waveshare.com/wiki/RGB-Matrix-P2-64x64) ×2 (daisy-chained)
 - External 5V high-current power supply
-- Custom PCB (designed during the project)
-- Rotary encoder with push button
+- Custom HUB75E bonnet PCB (designed for this project)
+- Rotary encoder for on-device navigation
+- On/off power switch
+- Custom 3D-printed chassis (CAD designed)
 
+---
 
 ## Software
+- Visual Studio Code with the [PlatformIO](https://platformio.org/) extension
 - Arduino framework (ESP32)
 - FreeRTOS
-- DMA-driven HUB75E display driver
+- [HUB75E LED display driver](https://github.com/mrcodetastic/ESP32-HUB75-MatrixPanel-DMA) (by mrcodetastic)  
 - ArduinoJson
 
+---
 
 ## About me
-I’m Mykhail, an ICT Engineering student at KTH, aiming for an MSc in Embedded Systems.  
+I’m "Misha", an ICT Engineering student at KTH, aiming for an MSc in Embedded Systems.  
 This is my first project — It is not perfect, optimized or effective. But i am damn proud of it.
