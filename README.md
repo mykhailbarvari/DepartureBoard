@@ -79,4 +79,7 @@ This was my first PCB design, and it taught me a lot about planning, layout cons
 **3D PCB Model**
 <img src="assets\CustomPCB_3Dmodel.png">
 
+**PCB Layout**
+<img src="assets\CustomPCB_layout.png">
+
 
