@@ -1,5 +1,5 @@
 # Departure Board – ESP32 Transit Display
-## 🚧🚧🚧 WORK IN PROGRESS🚧🚧🚧
+## 🚧 WORK IN PROGRESS 🚧
 A real-time LED departure board built as my first personal embedded systems project.
 
 The system runs on a "[ESP32-S3 Nano](https://www.waveshare.com/wiki/ESP32-S3-Nano)" by Waveshare and drives two daisy-chained [HUB75E LED matrix panels](https://www.waveshare.com/wiki/RGB-Matrix-P2-64x64) to display live public transport departure data.
