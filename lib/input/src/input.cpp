@@ -2,24 +2,38 @@
 #include <input.h>
 #include <config.h>
 
-static bool s_onoff, s_nav1, s_nav2, s_select;
+// Constants
+static const uint32_t DEBOUNCE_BTN_MS = 35;
+static const int ENCODER_STEPS_PER_CLICK = 1;
 
-// Debounce state per knapp
-static bool s_onoff_stable = false, s_select_stable = false;
-static bool s_onoff_lastRaw = false, s_select_lastRaw = false;
-static uint32_t s_onoff_lastChangeMs = 0, s_select_lastChangeMs = 0;
+// Button state structure
+struct ButtonState {
+  bool stable = false;
+  bool lastRaw = false;
+  uint32_t lastChangeMs = 0;
+};
 
-static bool debounceButton(bool raw, bool &stable, bool &lastRaw, uint32_t &lastChangeMs, uint32_t debounceMs) {
+static ButtonState s_onoff;
+static ButtonState s_select;
+static bool s_encUp = false;
+static bool s_encDown = false;
+
+// Debounce a button and return its stable state
+static bool debounceButton(bool raw, ButtonState &btn) {
   uint32_t now = millis();
-  if (raw != lastRaw) { lastRaw = raw; lastChangeMs = now; }
-  if ((now - lastChangeMs) >= debounceMs) stable = lastRaw;
-  return stable;
+  if (raw != btn.lastRaw) {
+    btn.lastRaw = raw;
+    btn.lastChangeMs = now;
+  }
+  if ((now - btn.lastChangeMs) >= DEBOUNCE_BTN_MS) {
+    btn.stable = btn.lastRaw;
+  }
+  return btn.stable;
 }
 
-// --------- ENCODER (polling + latch/consume) ----------
+// Encoder state
 static int s_aLast = HIGH;
 static int s_encAccum = 0;
-// -----------------------------------------------------
 
 void input_init(void) {
   pinMode(INPUT1, INPUT_PULLUP);
@@ -32,42 +46,72 @@ void input_init(void) {
   s_encAccum = 0;
 }
 
-void input_update(void) {
-  const uint32_t DEBOUNCE_BTN_MS = 35;
-
-  // Knappar: LOW = aktiv (pga INPUT_PULLUP)
-  bool raw_onoff  = (digitalRead(INPUT1) == LOW);
-  bool raw_select = (digitalRead(INPUT2) == LOW);
-
-  s_onoff  = debounceButton(raw_onoff,  s_onoff_stable,  s_onoff_lastRaw,  s_onoff_lastChangeMs,  DEBOUNCE_BTN_MS);
-  s_select = debounceButton(raw_select, s_select_stable, s_select_lastRaw, s_select_lastChangeMs, DEBOUNCE_BTN_MS);
-
-  // --------- ENCODER: 1 fysiskt klick => 1 event ----------
+// Update encoder state (separate function for clarity)
+static void input_updateEncoder(void) {
   int aNow = digitalRead(INPUT3);
 
-  // reagera på BÅDA flanker på A (HIGH<->LOW)
+  // React on both edges of A (HIGH<->LOW)
   if (aNow != s_aLast) {
     int b = digitalRead(INPUT4);
 
-    // riktning: om fel håll, byt ++/-- här
-    if (b != aNow) s_encAccum++;
-    else           s_encAccum--;
+    // Direction: change ++/-- here if reversed
+    if (b != aNow) {
+      s_encAccum++;
+    } else {
+      s_encAccum--;
+    }
 
     s_aLast = aNow;
   }
 
-  // EC11E12-15P30: 30 detents/varv men 15 PPR => 2 A-flanker per klick
-  const int STEPS_PER_CLICK = 1;
-
-  if (s_encAccum >= STEPS_PER_CLICK)  { s_nav1 = true; s_encAccum = 0; }  // UP (latched)
-  if (s_encAccum <= -STEPS_PER_CLICK) { s_nav2 = true; s_encAccum = 0; }  // DOWN (latched)
-  // --------------------------------------------------------
+  // EC11E12-15P30: 30 detents/turn with 15 PPR => 2 A-edges per click
+  if (s_encAccum >= ENCODER_STEPS_PER_CLICK) {
+    s_encUp = true;
+    s_encAccum = 0;
+  }
+  if (s_encAccum <= -ENCODER_STEPS_PER_CLICK) {
+    s_encDown = true;
+    s_encAccum = 0;
+  }
 }
 
-// Knappnivåer (som innan)
-bool input_onoff(void)  { return s_onoff;  }
-bool input_select(void) { return s_select; }
+void input_update(void) {
+  // Buttons: LOW = active (due to INPUT_PULLUP)
+  bool raw_onoff = (digitalRead(INPUT1) == LOW);
+  bool raw_select = (digitalRead(INPUT2) == LOW);
 
-// Encoder: consume så ControlLogicTask (20ms) inte kan missa event
-bool input_nav1(void) { bool t = s_nav1; s_nav1 = false; return t; } // UP (1 gång)
-bool input_nav2(void) { bool t = s_nav2; s_nav2 = false; return t; } // DOWN (1 gång)
+  debounceButton(raw_onoff, s_onoff);
+  debounceButton(raw_select, s_select);
+
+  // Update encoder
+  input_updateEncoder();
+}
+
+// Button level queries
+bool input_onoff(void) {
+  return s_onoff.stable;
+}
+
+bool input_select(void) {
+  return s_select.stable;
+}
+
+// Encoder: consume so ControlLogicTask (20ms) doesn't miss events
+bool input_encoderUp(void) {
+  bool pressed = s_encUp;
+  s_encUp = false;
+  return pressed;
+}
+
+bool input_encoderDown(void) {
+  bool pressed = s_encDown;
+  s_encDown = false;
+  return pressed;
+}
+
+// Detect rising edge (press event) of a button
+bool input_isPressed(ButtonTracker &tracker, bool currentState) {
+  bool pressed = currentState && !tracker.lastState;
+  tracker.lastState = currentState;
+  return pressed;
+}

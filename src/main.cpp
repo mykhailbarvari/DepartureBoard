@@ -17,7 +17,7 @@ void InputTask(void *pv) {  // Pollar inputs
   (void)pv;
   for (;;) {
     input_update();                   // Kollar input status
-    displayDisabled = input_onoff();  // MOMENTARY fysiskt, kommer bli switch sen
+    displayDisabled = input_onoff();  // MOMENTARY fysiskt, kommer bli switch sen 
     vTaskDelay(pdMS_TO_TICKS(1));  // Polling intervall
   }
 }
@@ -121,15 +121,13 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
 
       case STATE_MENU:
         {
-static bool prevSelect = false;
-
-bool upPressed   = input_nav2();   // consume-event
-bool downPressed = input_nav1();   // consume-event
-
-bool select = input_select();
-bool selectPressed = select && !prevSelect;
-prevSelect = select;
-
+          static ButtonTracker selectTracker = {false, false};
+          static ButtonTracker upTracker = {false, false};
+          static ButtonTracker downTracker = {false, false};
+          
+          bool upPressed = input_encoderDown();
+          bool downPressed = input_encoderUp();
+          bool selectPressed = input_isPressed(selectTracker, input_select());
 
           if (upPressed) {
             ui.selectedIndex--;
@@ -144,7 +142,7 @@ prevSelect = select;
           }
 
           if (selectPressed) {
-            // exempel: välj meny
+            // Handle menu selection
             switch (ui.selectedIndex) {
               case 0:
                 ui.state = STATE_DEPARTURES;
@@ -155,36 +153,42 @@ prevSelect = select;
 
               case 1:
                 ui.state = STATE_STATION;
+                ui.dirty = true;
                 break;
 
               case 2:
                 ui.state = STATE_BRIGHTNESS;
+                ui.dirty = true;
                 break;
 
               case 3:
                 ui.state = STATE_SYSTEM_SETTINGS;
+                ui.dirty = true;
                 break;
             }
-            ui.dirty = true;
-          }
-
-          if (selectPressed && ui.selectedIndex == 0) {
-            ui.state = STATE_DEPARTURES;
-            ui.dirty = true;        // <-- rita departures direkt
-            g_dataUpdated = false;  // valfritt: "vi kommer visa senaste"
           }
         }
         break;
 
       case STATE_DEPARTURES:
         {
-          static bool prevBack = false;
-          bool back = input_select();  // välj en knapp som “back”
-          bool backPressed = back && !prevBack;
-          prevBack = back;
+          static ButtonTracker backTracker = {false, false};
+          
+          bool backPressed = input_isPressed(backTracker, input_select());
 
           if (backPressed) {
             ui.state = STATE_MENU;
+            ui.dirty = true;
+          }
+
+          // Scroll with encoder
+          if (input_encoderDown()) {
+            ui.scrollOffset++;
+            ui.dirty = true;
+          }
+          if (input_encoderUp()) {
+            ui.scrollOffset--;
+            if (ui.scrollOffset < 0) ui.scrollOffset = 0;
             ui.dirty = true;
           }
 
@@ -193,7 +197,6 @@ prevSelect = select;
             ui.dirty = true;
           }
         }
-        // -------------------------------------------------------------------------------HÄR SKA SCROLL LOGIK VARA
         break;
 
       case STATE_STATION:
