@@ -18,7 +18,7 @@ void InputTask(void *pv) {  // Pollar inputs
   for (;;) {
     input_update();                   // Kollar input status
     displayDisabled = input_onoff();  // MOMENTARY fysiskt, kommer bli switch sen
-    vTaskDelay(pdMS_TO_TICKS(10));  // Polling intervall
+    vTaskDelay(pdMS_TO_TICKS(1));  // Polling intervall
   }
 }
 
@@ -90,7 +90,7 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
 
   for (;;) {
     if (displayDisabled) {
-      vTaskDelay(pdMS_TO_TICKS(50));
+      vTaskDelay(pdMS_TO_TICKS(20));
       continue;
     }
 
@@ -121,19 +121,15 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
 
       case STATE_MENU:
         {
-          static bool prevUp = false, prevDown = false, prevSelect = false;
+static bool prevSelect = false;
 
-          bool up = input_nav1();
-          bool down = input_nav2();
-          bool select = input_select();
+bool upPressed   = input_nav2();   // consume-event
+bool downPressed = input_nav1();   // consume-event
 
-          bool upPressed = up && !prevUp;
-          bool downPressed = down && !prevDown;
-          bool selectPressed = select && !prevSelect;
+bool select = input_select();
+bool selectPressed = select && !prevSelect;
+prevSelect = select;
 
-          prevUp = up;
-          prevDown = down;
-          prevSelect = select;
 
           if (upPressed) {
             ui.selectedIndex--;
