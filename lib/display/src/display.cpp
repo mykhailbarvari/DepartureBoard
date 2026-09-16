@@ -4,11 +4,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <font.h>
-#include <Preferences.h>
+#include <settings.h>
 
-volatile uint8_t displayBrightness = DEFAULT_BRIGHTNESS;  // Brightness
-
-static Preferences s_prefs;
 
 // Definierar en tom pekare för panelen. Används för tillgång till HUB75E Library
 static MatrixPanel_I2S_DMA* display = nullptr;
@@ -37,10 +34,8 @@ void clearClipX(void) {
 // Funktion för Start-Initiering
 void display_init(void) {
 
-  // Ladda sparad brightness
-  s_prefs.begin("board", true);  // read-only
-  displayBrightness = s_prefs.getUChar("brightness", DEFAULT_BRIGHTNESS);
-  s_prefs.end();
+  // Ljusstyrkan kommer från settings-modulen; settings_load() måste ha
+  // körts före display_init().
 
   // Panel Initiering (Upplösning/Kedja)
   HUB75_I2S_CFG mxconfig(PANEL_RES_X, PANEL_RES_Y, PANEL_CHAIN);
@@ -54,8 +49,8 @@ void display_init(void) {
   display = new MatrixPanel_I2S_DMA(mxconfig);
   display->begin();
   display->clearScreen();
-  display->setBrightness(displayBrightness);
-  g_curBrightness = displayBrightness;  // Synka fade-state så ingen onödig fade-in sker
+  display->setBrightness(g_settings.brightness);
+  g_curBrightness = g_settings.brightness;  // Synka fade-state så ingen onödig fade-in sker
 }
 
 // Funktion som rensar panel
@@ -90,7 +85,7 @@ static void updateBrightness(uint8_t target) {
 }
 
 void display_on(void) {
-  updateBrightness(displayBrightness);
+  updateBrightness(g_settings.brightness);
 }
 
 void display_off(void) {
@@ -469,17 +464,15 @@ void display_drawRectOutline(int x, int y, int w, int h, uint16_t color) {
 }
 
 void display_setBrightness(uint8_t val) {
-  displayBrightness = val;
+  g_settings.brightness = val;
 }
 
 uint8_t display_getBrightness(void) {
-  return displayBrightness;
+  return g_settings.brightness;
 }
 
 void display_saveBrightness(void) {
-  s_prefs.begin("board", false);  // read-write
-  s_prefs.putUChar("brightness", displayBrightness);
-  s_prefs.end();
+  settings_save();
 }
 
 void display_stopDMA(void) {

@@ -10,6 +10,8 @@
 #include <config.h>
 #include <font.h>
 #include <WiFi.h>
+#include <ui_carousel.h>
+#include <ui_icons.h>
 
 
 Departure departures[MAX_DEPARTURES];
@@ -38,8 +40,8 @@ int departure_minsUntil(const Departure* d) {
 // kan glida isär (de var två separata kopior tidigare).
 bool departure_passesFilter(const Departure* d) {
   if (!d) return false;
-  if (g_directionCode != 0 && d->directionCode != (uint8_t)g_directionCode) return false;
-  if (g_walkMinutes > 0 && departure_minsUntil(d) < g_walkMinutes) return false;
+  if (g_settings.directionCode != 0 && d->directionCode != (uint8_t)g_settings.directionCode) return false;
+  if (g_settings.walkMinutes > 0 && departure_minsUntil(d) < g_settings.walkMinutes) return false;
   return true;
 }
 
@@ -106,7 +108,7 @@ void drawRow(int row, const Departure* departure, int yOffset) {
   char destFit[64];
   int maxPx = (X_DEST_END - X_DEST_START + 1);
   fitTextToWidthPx(destFit, sizeof(destFit), departure->destination, maxPx);
-  drawString(X_DEST_START, y, destFit, cancelled ? COLOR_ERROR : g_colourway);
+  drawString(X_DEST_START, y, destFit, cancelled ? COLOR_ERROR : g_settings.colourway);
 
   // ===== MINUTES / TIME: right-aligned =====
   setClipX(X_MIN_START, X_MIN_END);
@@ -162,7 +164,7 @@ static void renderEmptyState(void) {
       return;
 
     case FETCH_EMPTY:
-      drawCentered(26, "Inga avgangar", COLOR_GRAY_50);
+      drawCentered(26, "Inga avgångar", COLOR_GRAY_50);
       return;
 
     case FETCH_PENDING:
@@ -241,7 +243,7 @@ static void drawScrollIndicator(int yTop, int total, int visible, int offset) {
   int y = yTop + ((maxOffset > 0) ? ((H - thumb) * offset) / maxOffset : 0);
 
   display_fillRect(X, yTop, 1, H,     COLOR_GRAY_10);
-  display_fillRect(X, y,    1, thumb, g_colourway);
+  display_fillRect(X, y,    1, thumb, g_settings.colourway);
 }
 
 void renderMainFromArray(int startIndex) {
@@ -252,7 +254,7 @@ void renderMainFromArray(int startIndex) {
 
   int visible = departures_visibleCount();
   if (visible == 0) {
-    drawCentered(26, "Inga avgangar i tid", COLOR_GRAY_50);
+    drawCentered(26, "Inga avgångar i tid", COLOR_GRAY_50);
     return;
   }
 
@@ -282,185 +284,162 @@ void renderMainFromArray(int startIndex) {
 
 
 void renderBoot(void) {
-    drawBitmapMask(loadingscreen2, 128, 64, 0, 0, g_colourway);
+    drawBitmapMask(loadingscreen2, 128, 64, 0, 0, g_settings.colourway);
 }
 
-// ======== MAIN MENU =============
+// ============================ KARUSELLMENYN ============================
 UiState ui = {
   .state = STATE_BOOT,  // Nuvarande State
   .selectedIndex = 0,   // Index som vi selectar
   .scrollOffset = 0,    // Hjälper Scroll
-  .dirty = true,         // Behövs ritas om
+  .dirty = true,        // Behövs ritas om
   .bootStartMs = 0
 };
 
-#define MAIN_MENU_ITEMS 4  // Departures, Station, Brightness, System Settings
+// Avgångsskärmen är hem och är därför INTE ett menyval.
+//
+// "Hållplats" är tillfällig: gångtid och riktning flyttar till webbportalen
+// i fas 4, men tills portalen finns är detta enda sättet att ställa dem.
+// Ta bort posten (och STATE_STATION*) när portalen är i mål.
+static const CarouselItem kMenuItems[] = {
+  { icon_brightness_24, "Ljusstyrka" },
+  { icon_palette_24,    "Färgtema"   },
+  { icon_pin_24,        "Hållplats"  },   // TILLFÄLLIG — se ovan
+  { icon_qr_24,         "Nätverk"    },
+  { icon_gear_24,       "System"     },
+};
+const int kMenuItemCount = (int)(sizeof(kMenuItems) / sizeof(kMenuItems[0]));
 
 void renderMainMenu(void) {
-
-  // Titel
-  drawBitmapMask(bitmap_mainMenu_MainMenu, 128, 64, 0, 0, g_colourway);
-
-  // Alla menytexter i grått
-  drawBitmapMask(bitmap_mainMenu_Departures,     128, 64, 0, 0, COLOR_GRAY_90);
-  drawBitmapMask(bitmap_mainMenu_Station,        128, 64, 0, 0, COLOR_GRAY_90);
-  drawBitmapMask(bitmap_mainMenu_Brightness,        128, 64, 0, 0, COLOR_GRAY_90);
-  drawBitmapMask(bitmap_mainMenu_SystemSettings, 128, 64, 0, 0, COLOR_GRAY_90);
-
-  // Highlight (orange) – ENDAST selectable
-  switch (ui.selectedIndex) {
-    case 0:
-      drawBitmapMask(bitmap_mainMenu_Departures,     128, 64, 0, 0, g_colourway);
-      drawBitmapMask(bitmap_dot_6x6, 6, 6, 1, 15, g_colourway);
-      break;
-
-    case 1:
-      drawBitmapMask(bitmap_mainMenu_Station,        128, 64, 0, 0, g_colourway);
-      drawBitmapMask(bitmap_dot_6x6, 6, 6, 1, 28, g_colourway);
-      break;
-
-    case 2:
-      drawBitmapMask(bitmap_mainMenu_Brightness,        128, 64, 0, 0, g_colourway);
-      drawBitmapMask(bitmap_dot_6x6, 6, 6, 1, 41, g_colourway);
-      break;
-
-    case 3:
-      drawBitmapMask(bitmap_mainMenu_SystemSettings, 128, 64, 0, 0, g_colourway);
-      drawBitmapMask(bitmap_dot_6x6, 6, 6, 1, 54, g_colourway);
-      break;
-  }
-
+  ui_renderCarousel(kMenuItems, kMenuItemCount, ui.selectedIndex, g_settings.colourway);
 }
 
 void mainMenuWrap() {
-  if (ui.selectedIndex < 0)
-    ui.selectedIndex = MAIN_MENU_ITEMS - 1;
-
-  if (ui.selectedIndex >= MAIN_MENU_ITEMS)
-    ui.selectedIndex = 0;
-
-  ui.scrollOffset = 0; // main menu scrollar aldrig
+  if (ui.selectedIndex < 0)              ui.selectedIndex = kMenuItemCount - 1;
+  if (ui.selectedIndex >= kMenuItemCount) ui.selectedIndex = 0;
+  ui.scrollOffset = 0;  // karusellen scrollar aldrig
 }
 
-// ------------------------------------------------------------ HELPER FUNKTIONER -------------------------------------
-void listClamp(int count, int visible) {
-  if (ui.selectedIndex < 0) ui.selectedIndex = 0;
-  if (ui.selectedIndex >= count) ui.selectedIndex = count - 1;
+// ------------------------------------------------------- GEMENSAM SKÄRMHJÄLP
 
-  if (ui.selectedIndex < ui.scrollOffset)
-    ui.scrollOffset = ui.selectedIndex;
-
-  if (ui.selectedIndex >= ui.scrollOffset + visible)
-    ui.scrollOffset = ui.selectedIndex - visible + 1;
-
-  if (ui.scrollOffset < 0) ui.scrollOffset = 0;
-
-  int maxScroll = count - visible;
-  if (maxScroll < 0) maxScroll = 0;
-  if (ui.scrollOffset > maxScroll) ui.scrollOffset = maxScroll;
+static void drawTitle(const char* title) {
+  const int w = measureTextPx(title);
+  drawString((128 - w) / 2, 1, title, g_settings.colourway);
 }
 
-
-
-void renderStation(int navIndex, bool walkEditing, int directionCode, int walkMinutes) {
-  drawBitmapMask(Station_MenuHeader, 128, 64, 0, 0, g_colourway);
-
-  uint16_t walkLabelColor = (!walkEditing && navIndex == 0) ? g_colourway : COLOR_GRAY_90;
-  uint16_t dirColor       = (!walkEditing && navIndex == 1) ? g_colourway : COLOR_GRAY_90;
-  uint16_t saveColor      = (!walkEditing && navIndex == 2) ? g_colourway : COLOR_GRAY_90;
-
-  drawBitmapMask(Station_WalkOption,      128, 64, 1, 0, walkLabelColor);
-  drawBitmapMask(Station_DirectionOption, 128, 64, 1, 0, dirColor);
-  drawBitmapMask(SaveAndExit,             128, 64, 0, 0, saveColor);
-
-  if (directionCode == 1 || directionCode == 0)
-    drawBitmapMask(Station_DirectionOption1, 128, 64, 0, 0, dirColor);
-  if (directionCode == 2 || directionCode == 0)
-    drawBitmapMask(Station_DirectionOption2, 128, 64, 0, 0, dirColor);
-
-  char walkBuf[12];
-  if (walkMinutes == 0) snprintf(walkBuf, sizeof(walkBuf), "Off");
-  else                  snprintf(walkBuf, sizeof(walkBuf), "%d min", walkMinutes);
-  uint16_t walkValColor = walkEditing ? g_colourway : COLOR_GRAY_90;
-  drawString(38, 14, walkBuf, walkValColor);
-
-  if (!walkEditing) {
-    switch (navIndex) {
-      case 0: drawBitmapMask(bitmap_dot_6x6, 6, 6, 1, 17, g_colourway); break;
-      case 1: drawBitmapMask(bitmap_dot_6x6, 6, 6, 1, 30, g_colourway); break;
-      case 2: drawBitmapMask(bitmap_dot_6x6, 6, 6, 1, 54, g_colourway); break;
-    }
-  }
-}
-
-void renderDisplayMenu(void) {
-  drawBitmapMask(Display_Header,           128, 64, 0, 0, g_colourway);
-
-  uint16_t cBrightness = (ui.selectedIndex == 0) ? g_colourway : COLOR_GRAY_90;
-  uint16_t cColourway  = (ui.selectedIndex == 1) ? g_colourway : COLOR_GRAY_90;
-  uint16_t cSave       = (ui.selectedIndex == 2) ? g_colourway : COLOR_GRAY_90;
-
-  drawBitmapMask(Display_BrightnessOption, 128, 64, 0, 0, cBrightness);
-  drawBitmapMask(Display_ColourwayOption,  128, 64, 0, 0, cColourway);
-  drawBitmapMask(SaveAndExit,              128, 64, 0, 0, cSave);
-
-  switch (ui.selectedIndex) {
-    case 0: drawBitmapMask(bitmap_dot_6x6, 6, 6, 1, 18, g_colourway); break;
-    case 1: drawBitmapMask(bitmap_dot_6x6, 6, 6, 1, 32, g_colourway); break;
-    case 2: drawBitmapMask(bitmap_dot_6x6, 6, 6, 1, 54, g_colourway); break;
-  }
-}
+// ---------------------------------------------------------------- LJUSSTYRKA
 
 void renderBrightness(void) {
-  drawBitmapMask(Brightness_SettingHeader, 128, 64, 0, 0, g_colourway);
+  drawTitle("Ljusstyrka");
 
-  // Inner area of the box in Brightness_SettingHeader: x=11, y=23, w=106, h=22
-  const int BAR_X = 11;
-  const int BAR_Y = 23;
-  const int BAR_W = 106;
-  const int BAR_H = 22;
+  const int BAR_X = 12, BAR_Y = 24, BAR_W = 104, BAR_H = 14;
 
-  uint8_t brightness = display_getBrightness();
-  int fillW = (int)((uint32_t)brightness * BAR_W / 255);
-  if (fillW > 0) {
-    display_fillRect(BAR_X, BAR_Y, fillW, BAR_H, g_colourway);
-  }
+  const uint8_t b = display_getBrightness();
+  int fillW = (int)((uint32_t)b * BAR_W / 255);
+  if (fillW > BAR_W) fillW = BAR_W;
+
+  display_drawRectOutline(BAR_X - 1, BAR_Y - 1, BAR_W + 2, BAR_H + 2, COLOR_GRAY_25);
+  if (fillW > 0) display_fillRect(BAR_X, BAR_Y, fillW, BAR_H, g_settings.colourway);
+
+  // Fonten saknar '%', så siffran står ensam under stapeln.
+  char val[8];
+  snprintf(val, sizeof(val), "%d", (int)((uint32_t)b * 100 / 255));
+  const int w = measureTextPx(val);
+  drawString((128 - w) / 2, 46, val, COLOR_GRAY_90);
 }
+
+// ------------------------------------------------------------------ FÄRGTEMA
 
 void renderColourwayMenu(void) {
-  drawBitmapMask(Colourway_SettingsHeader, 128, 64, 0, 0, g_colourway);
+  drawTitle("Färgtema");
 
-  uint16_t cTurquoise = (ui.selectedIndex == 0) ? COLOR_TURQUOISE : COLOR_GRAY_90;
-  uint16_t cOrange    = (ui.selectedIndex == 1) ? COLOR_ORANGE    : COLOR_GRAY_90;
-  uint16_t cGreen     = (ui.selectedIndex == 2) ? COLOR_DARK_GREEN : COLOR_GRAY_90;
+  struct Opt { uint16_t colour; const char* name; };
+  static const Opt opts[3] = {
+    { COLOR_TURQUOISE,  "Turkos" },
+    { COLOR_ORANGE,     "Orange" },
+    { COLOR_DARK_GREEN, "Grön"   },
+  };
 
-  drawBitmapMask(Colourway_TurquioseOption, 128, 64, 0, 0, cTurquoise);
-  drawBitmapMask(Colourway_OrangeOption,    128, 64, 0, 0, cOrange);
-  drawBitmapMask(Colourway_GreenOption,     128, 64, 0, 0, cGreen);
+  for (int i = 0; i < 3; i++) {
+    const int y = 17 + i * 15;
+    const bool sel = (ui.selectedIndex == i);
 
-  switch (ui.selectedIndex) {
-    case 0: drawBitmapMask(bitmap_dot_6x6, 6, 6, 1, 18, COLOR_TURQUOISE);  break;
-    case 1: drawBitmapMask(bitmap_dot_6x6, 6, 6, 1, 32, COLOR_ORANGE);     break;
-    case 2: drawBitmapMask(bitmap_dot_6x6, 6, 6, 1, 46, COLOR_DARK_GREEN); break;
+    if (sel) display_fillRect(4, y + 4, 4, 4, opts[i].colour);
+    display_fillRect(14, y + 2, 9, 9, opts[i].colour);
+    drawString(30, y, opts[i].name, sel ? opts[i].colour : COLOR_GRAY_50);
   }
 }
 
-void renderSystemSettings(void) {
-  drawBitmapMask(SystemSettings_MenuHeader, 128, 64, 0, 0, g_colourway);
-  drawBitmapMask(SystemSettings_WiFiOption, 128, 64, 0, 0, g_colourway);
+// ------------------------------------------------------------------- NÄTVERK
 
-  // SSID till höger om WiFi-bitmapen (y=16, x=38)
+// Fas 4 ritar en QR-kod här; tills dess visas uppgifterna som text.
+void renderQR(void) {
+  drawTitle("Nätverk");
+
   if (WiFi.status() == WL_CONNECTED) {
-    char ssidBuf[32];
-    fitTextToWidthPx(ssidBuf, sizeof(ssidBuf), WiFi.SSID().c_str(), 128 - 38);
-    drawString(38, 16, ssidBuf, COLOR_WHITE);
+    char buf[40];
+
+    fitTextToWidthPx(buf, sizeof(buf), WiFi.SSID().c_str(), 124);
+    drawString(2, 18, buf, COLOR_GRAY_90);
+
+    snprintf(buf, sizeof(buf), "%s", WiFi.localIP().toString().c_str());
+    drawString(2, 32, buf, COLOR_WHITE);
+
+    snprintf(buf, sizeof(buf), "%d dBm", (int)WiFi.RSSI());
+    drawString(2, 46, buf, COLOR_GRAY_50);
   } else {
-    drawString(38, 16, "NOT CONNECTED", COLOR_ERROR);
+    drawString(2, 26, "Ej ansluten", COLOR_ERROR);
   }
 }
 
-void mainTask(void) {
-    beginFrame();
-    renderMainFromArray(0);
-    endFrame();
+// -------------------------------------------------------------------- SYSTEM
+
+void renderSystem(void) {
+  drawTitle("System");
+
+  char buf[40];
+
+  const uint32_t up = millis() / 1000UL;
+  snprintf(buf, sizeof(buf), "Uppe %luh %lum",
+           (unsigned long)(up / 3600UL), (unsigned long)((up / 60UL) % 60UL));
+  drawString(2, 18, buf, COLOR_GRAY_90);
+
+  snprintf(buf, sizeof(buf), "Heap %luk",
+           (unsigned long)(ESP.getFreeHeap() / 1024UL));
+  drawString(2, 32, buf, COLOR_GRAY_90);
+
+  snprintf(buf, sizeof(buf), "SL %s", api_fetchResultName(g_lastFetchResult));
+  drawString(2, 46, buf,
+             (g_lastFetchResult == FETCH_OK || g_lastFetchResult == FETCH_UNCHANGED)
+               ? COLOR_OK : COLOR_WARNING);
+}
+
+// ------------------------------------------- HÅLLPLATS (tillfällig, se fas 4)
+
+void renderStation(int navIndex, bool walkEditing, int directionCode, int walkMinutes) {
+  drawTitle("Hållplats");
+
+  const char* labels[3] = { "Gångtid", "Riktning", "Spara" };
+
+  for (int i = 0; i < 3; i++) {
+    const int y = 17 + i * 15;
+    const bool sel = (!walkEditing && navIndex == i);
+    const uint16_t c = sel ? g_settings.colourway : COLOR_GRAY_50;
+
+    if (sel) display_fillRect(4, y + 4, 4, 4, g_settings.colourway);
+    drawString(12, y, labels[i], c);
+  }
+
+  char buf[16];
+
+  // Gångtid
+  if (walkMinutes == 0) snprintf(buf, sizeof(buf), "Av");
+  else                  snprintf(buf, sizeof(buf), "%d min", walkMinutes);
+  drawTextRightAlignedInBox(70, 126, 17, buf,
+                            walkEditing ? g_settings.colourway : COLOR_GRAY_90);
+
+  // Riktning
+  if (directionCode == 0)      snprintf(buf, sizeof(buf), "Båda");
+  else                         snprintf(buf, sizeof(buf), "%d", directionCode);
+  drawTextRightAlignedInBox(70, 126, 32, buf, COLOR_GRAY_90);
 }

@@ -4,7 +4,7 @@
 #include <api.h>
 #include <input.h>
 #include <config.h>
-#include <Preferences.h>
+#include <settings.h>
 #include <time.h>
 #include "esp_sleep.h"
 #include "esp_wifi.h"
@@ -14,9 +14,6 @@
 volatile bool displayDisabled = false;  // Togglar panel, TRUE = PANEL AV
 volatile bool g_dataUpdated = false;
 volatile bool g_fetching = false;       // ApiTask fetchar just nu
-volatile int g_walkMinutes   = 0;   // minuter promenad — filtrerar avgångar under detta
-volatile int g_directionCode = 0;   // 0 = alla, 1 = riktning 1, 2 = riktning 2
-volatile uint16_t g_colourway = COLOR_ORANGE;  // Accentfärg för UI
 
 // Task-handles deklareras före tasksen, så ControlLogicTask kan väcka ApiTask.
 TaskHandle_t hInput = NULL;
@@ -91,44 +88,22 @@ void DisplayTask(void *pv) {  // ENDAST FÖR RENDERING
     beginFrame();
 
     switch (ui.state) {
-
-      case STATE_BOOT:
-        renderBoot();
-        break;
-
-      case STATE_INIT:
-        // ENDAST RENDERING
-        break;
-
-      case STATE_MENU:
-        renderMainMenu();
-        break;
+      case STATE_BOOT:       renderBoot();          break;
+      case STATE_MENU:       renderMainMenu();      break;
+      case STATE_BRIGHTNESS: renderBrightness();    break;
+      case STATE_COLOURWAY:  renderColourwayMenu(); break;
+      case STATE_QR:         renderQR();            break;
+      case STATE_SYSTEM:     renderSystem();        break;
 
       case STATE_DEPARTURES:
-        break;  // hanteras ovan
-
-      case STATE_DISPLAY_MENU:
-        renderDisplayMenu();
-        break;
-
-      case STATE_BRIGHTNESS:
-        renderBrightness();
-        break;
-
-      case STATE_COLOURWAY:
-        renderColourwayMenu();
-        break;
+        break;  // hanteras ovan, under mutex
 
       case STATE_STATION:
-        renderStation(ui.scrollOffset, false, (int)g_directionCode, (int)g_walkMinutes);
+        renderStation(ui.scrollOffset, false, (int)g_settings.directionCode, (int)g_settings.walkMinutes);
         break;
 
       case STATE_STATION_WALKTIME:
-        renderStation(0, true, (int)g_directionCode, ui.selectedIndex);
-        break;
-
-      case STATE_SYSTEM_SETTINGS:
-        renderSystemSettings();
+        renderStation(0, true, (int)g_settings.directionCode, ui.selectedIndex);
         break;
     }
     endFrame();
@@ -178,127 +153,16 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
         }
         break;
 
-
-      case STATE_INIT:
-        // ENDAST LOGIK
-        break;
-
-      case STATE_MENU:
-        {
-          if (prev) { ui.selectedIndex--; mainMenuWrap(); ui.dirty = true; }
-          if (next) { ui.selectedIndex++; mainMenuWrap(); ui.dirty = true; }
-
-          if (press == PRESS_LONG) {          // tillbaka till hemskärmen
-            ui.state = STATE_DEPARTURES;
-            ui.scrollOffset = 0;
-            ui.dirty = true;
-            break;
-          }
-
-          if (press == PRESS_SHORT) {
-            switch (ui.selectedIndex) {
-              case 0:
-                ui.state = STATE_DEPARTURES;
-                ui.scrollOffset = 0;
-                g_dataUpdated = false;
-                requestFetch();   // färsk data direkt när man öppnar listan
-                ui.dirty = true;
-                break;
-
-              case 1:
-                ui.state = STATE_STATION;
-                ui.scrollOffset = 0;
-                ui.dirty = true;
-                break;
-
-              case 2:
-                ui.state = STATE_DISPLAY_MENU;
-                ui.selectedIndex = 0;
-                ui.dirty = true;
-                break;
-
-              case 3:
-                ui.state = STATE_SYSTEM_SETTINGS;
-                ui.dirty = true;
-                break;
-            }
-          }
-        }
-        break;
-
-      case STATE_DISPLAY_MENU:
-        {
-          if (prev && ui.selectedIndex > 0) { ui.selectedIndex--; ui.dirty = true; }
-          if (next && ui.selectedIndex < 2) { ui.selectedIndex++; ui.dirty = true; }
-
-          if (press == PRESS_LONG) {
-            ui.state = STATE_MENU;
-            ui.selectedIndex = 2;
-            ui.dirty = true;
-            break;
-          }
-
-          if (press == PRESS_SHORT) {
-            switch (ui.selectedIndex) {
-              case 0:
-                ui.state = STATE_BRIGHTNESS;
-                ui.dirty = true;
-                break;
-              case 1:
-                ui.state = STATE_COLOURWAY;
-                ui.selectedIndex = (g_colourway == COLOR_TURQUOISE) ? 0
-                                 : (g_colourway == COLOR_DARK_GREEN) ? 2 : 1;
-                ui.dirty = true;
-                break;
-              case 2:
-                ui.state = STATE_MENU;
-                ui.selectedIndex = 2;
-                ui.dirty = true;
-                break;
-            }
-          }
-        }
-        break;
-
-      case STATE_COLOURWAY:
-        {
-          if (prev && ui.selectedIndex > 0) { ui.selectedIndex--; ui.dirty = true; }
-          if (next && ui.selectedIndex < 2) { ui.selectedIndex++; ui.dirty = true; }
-
-          if (press == PRESS_LONG) {   // ångra utan att spara
-            ui.state = STATE_DISPLAY_MENU;
-            ui.selectedIndex = 1;
-            ui.dirty = true;
-            break;
-          }
-
-          if (press == PRESS_SHORT) {
-            switch (ui.selectedIndex) {
-              case 0: g_colourway = COLOR_TURQUOISE;  break;
-              case 1: g_colourway = COLOR_ORANGE;     break;
-              case 2: g_colourway = COLOR_DARK_GREEN; break;
-            }
-            Preferences prefs;
-            prefs.begin("board", false);
-            prefs.putUShort("colourway", (uint16_t)g_colourway);
-            prefs.end();
-            ui.state = STATE_DISPLAY_MENU;
-            ui.selectedIndex = 1;  // Colourway-alternativet i Display-menyn
-            ui.dirty = true;
-          }
-        }
-        break;
-
       case STATE_DEPARTURES:
         {
-          if (press == PRESS_SHORT) {
+          if (press == PRESS_SHORT) {   // öppna karusellen
             ui.state = STATE_MENU;
+            ui.selectedIndex = 0;
             ui.dirty = true;
           }
           // PRESS_LONG: reserverad för QR-koden, se fas 4.
 
-          // Samma filterlogik som renderingen använder — en enda källa.
-          // Radkapaciteten varierar: statusraden stjal en rad nar den visas.
+          // Radkapaciteten varierar: statusraden stjäl en rad när den visas.
           const int filteredCount = departures_visibleCount();
           const int capacity = departures_rowCapacity();
           const int maxOffset = (filteredCount > capacity) ? filteredCount - capacity : 0;
@@ -333,75 +197,44 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
         }
         break;
 
-      case STATE_STATION:
+      case STATE_MENU:
         {
-          if (next && ui.scrollOffset < 2) { ui.scrollOffset++; ui.dirty = true; }
-          if (prev && ui.scrollOffset > 0) { ui.scrollOffset--; ui.dirty = true; }
+          if (prev) { ui.selectedIndex--; mainMenuWrap(); ui.dirty = true; }
+          if (next) { ui.selectedIndex++; mainMenuWrap(); ui.dirty = true; }
 
-          if (press == PRESS_LONG) {
-            ui.state = STATE_MENU;
-            ui.selectedIndex = 1;
-            ui.dirty = true;
-            break;
-          }
-
-          if (press == PRESS_SHORT) {
-            switch (ui.scrollOffset) {
-              case 0:  // Walk time-editor
-                ui.selectedIndex = (int)g_walkMinutes;
-                ui.state = STATE_STATION_WALKTIME;
-                ui.dirty = true;
-                break;
-
-              case 1:  // Toggla direction: 0→1→2→0, spara direkt.
-                // Riktningen filtreras numera vid rendering, så bytet slår
-                // igenom direkt utan att invänta en ny hämtning.
-                g_directionCode = (g_directionCode + 1) % 3;
-                {
-                  Preferences prefs;
-                  prefs.begin("board", false);
-                  prefs.putUChar("dircode", (uint8_t)g_directionCode);
-                  prefs.end();
-                }
-                ui.dirty = true;
-                break;
-
-              case 2:  // Save & Exit
-                {
-                  Preferences prefs;
-                  prefs.begin("board", false);
-                  prefs.putUChar("walkmin", (uint8_t)g_walkMinutes);
-                  prefs.end();
-                }
-                ui.state = STATE_MENU;
-                ui.selectedIndex = 1;
-                ui.dirty = true;
-                break;
-            }
-          }
-        }
-        break;
-
-      case STATE_STATION_WALKTIME:
-        {
-          if (next && ui.selectedIndex < 60) { ui.selectedIndex++; ui.dirty = true; }
-          if (prev && ui.selectedIndex > 0)  { ui.selectedIndex--; ui.dirty = true; }
-
-          if (press == PRESS_LONG) {   // ångra utan att spara
-            ui.state = STATE_STATION;
+          if (press == PRESS_LONG) {   // tillbaka till hemskärmen
+            ui.state = STATE_DEPARTURES;
             ui.scrollOffset = 0;
             ui.dirty = true;
             break;
           }
 
           if (press == PRESS_SHORT) {
-            g_walkMinutes = ui.selectedIndex;
-            Preferences prefs;
-            prefs.begin("board", false);
-            prefs.putUChar("walkmin", (uint8_t)g_walkMinutes);
-            prefs.end();
-            ui.state = STATE_STATION;
-            ui.scrollOffset = 0;  // återgå till Walk-raden
+            // Index följer kMenuItems i logic.cpp.
+            switch (ui.selectedIndex) {
+              case 0:
+                ui.state = STATE_BRIGHTNESS;
+                break;
+
+              case 1:
+                ui.state = STATE_COLOURWAY;
+                ui.selectedIndex = (g_settings.colourway == COLOR_TURQUOISE) ? 0
+                                 : (g_settings.colourway == COLOR_DARK_GREEN) ? 2 : 1;
+                break;
+
+              case 2:  // TILLFÄLLIG post, se kMenuItems
+                ui.state = STATE_STATION;
+                ui.scrollOffset = 0;
+                break;
+
+              case 3:
+                ui.state = STATE_QR;
+                break;
+
+              case 4:
+                ui.state = STATE_SYSTEM;
+                break;
+            }
             ui.dirty = true;
           }
         }
@@ -425,18 +258,123 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
           // Både kort och långt tryck lämnar skärmen; värdet sparas ändå.
           if (press != PRESS_NONE) {
             display_saveBrightness();
-            ui.state = STATE_DISPLAY_MENU;
+            ui.state = STATE_MENU;
             ui.selectedIndex = 0;
             ui.dirty = true;
           }
         }
         break;
 
-      case STATE_SYSTEM_SETTINGS:
+      case STATE_COLOURWAY:
+        {
+          if (prev && ui.selectedIndex > 0) { ui.selectedIndex--; ui.dirty = true; }
+          if (next && ui.selectedIndex < 2) { ui.selectedIndex++; ui.dirty = true; }
+
+          if (press == PRESS_LONG) {   // ångra utan att spara
+            ui.state = STATE_MENU;
+            ui.selectedIndex = 1;
+            ui.dirty = true;
+            break;
+          }
+
+          if (press == PRESS_SHORT) {
+            switch (ui.selectedIndex) {
+              case 0: g_settings.colourway = COLOR_TURQUOISE;  break;
+              case 1: g_settings.colourway = COLOR_ORANGE;     break;
+              case 2: g_settings.colourway = COLOR_DARK_GREEN; break;
+            }
+            settings_save();
+            ui.state = STATE_MENU;
+            ui.selectedIndex = 1;
+            ui.dirty = true;
+          }
+        }
+        break;
+
+      case STATE_QR:
         {
           if (press != PRESS_NONE) {
             ui.state = STATE_MENU;
             ui.selectedIndex = 3;
+            ui.dirty = true;
+            break;
+          }
+          // IP-adressen kan dyka upp medan skärmen är uppe.
+          static uint32_t lastTickQr = 0;
+          if (millis() - lastTickQr >= 1000) { lastTickQr = millis(); ui.dirty = true; }
+        }
+        break;
+
+      case STATE_SYSTEM:
+        {
+          if (press != PRESS_NONE) {
+            ui.state = STATE_MENU;
+            ui.selectedIndex = 4;
+            ui.dirty = true;
+            break;
+          }
+          // Uppetid och heap räknas upp medan skärmen är uppe.
+          static uint32_t lastTickSys = 0;
+          if (millis() - lastTickSys >= 1000) { lastTickSys = millis(); ui.dirty = true; }
+        }
+        break;
+
+      case STATE_STATION:
+        {
+          if (next && ui.scrollOffset < 2) { ui.scrollOffset++; ui.dirty = true; }
+          if (prev && ui.scrollOffset > 0) { ui.scrollOffset--; ui.dirty = true; }
+
+          if (press == PRESS_LONG) {
+            ui.state = STATE_MENU;
+            ui.selectedIndex = 2;
+            ui.dirty = true;
+            break;
+          }
+
+          if (press == PRESS_SHORT) {
+            switch (ui.scrollOffset) {
+              case 0:  // Gångtid
+                ui.selectedIndex = (int)g_settings.walkMinutes;
+                ui.state = STATE_STATION_WALKTIME;
+                ui.dirty = true;
+                break;
+
+              case 1:  // Toggla riktning: 0->1->2->0, spara direkt.
+                // Riktningen filtreras numera vid rendering, så bytet slår
+                // igenom direkt utan att invänta en ny hämtning.
+                g_settings.directionCode = (g_settings.directionCode + 1) % 3;
+                settings_save();
+                ui.dirty = true;
+                break;
+
+              case 2:  // Spara & stäng
+                settings_save();
+                ui.state = STATE_MENU;
+                ui.selectedIndex = 2;
+                ui.dirty = true;
+                break;
+            }
+          }
+        }
+        break;
+
+      case STATE_STATION_WALKTIME:
+        {
+          if (next && ui.selectedIndex < 60) { ui.selectedIndex++; ui.dirty = true; }
+          if (prev && ui.selectedIndex > 0)  { ui.selectedIndex--; ui.dirty = true; }
+
+          if (press == PRESS_LONG) {   // ångra utan att spara
+            ui.state = STATE_STATION;
+            ui.scrollOffset = 0;
+            ui.dirty = true;
+            break;
+          }
+
+          if (press == PRESS_SHORT) {
+            g_settings.walkMinutes = ui.selectedIndex;
+            settings_save();
+            ui.state = STATE_STATION;
+            ui.scrollOffset = 0;
             ui.dirty = true;
           }
         }
@@ -461,7 +399,7 @@ void ApiTask(void *pv) {
     ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(waitMs));
 
     g_fetching = true;
-    FetchResult r = api_fetch_departures(SITE_ID);
+    FetchResult r = api_fetch_departures((int)g_settings.siteId);
     g_fetching = false;
 
     Serial.printf("[api] %s (%d avgangar)\n", api_fetchResultName(r), departureCount);
@@ -491,15 +429,9 @@ void ApiTask(void *pv) {
 void setup() {
   Serial.begin(115200);
 
+  settings_load();  // måste ske före display_init(), som läser ljusstyrkan
   input_init();
-  display_init();  // laddar brightness från NVS
-
-  Preferences prefs;
-  prefs.begin("board", true);
-  g_walkMinutes   = (int)prefs.getUChar("walkmin", 0);
-  g_directionCode = (int)prefs.getUChar("dircode", 0);
-  g_colourway     = prefs.getUShort("colourway", COLOR_ORANGE);
-  prefs.end();
+  display_init();
 
   gDeparturesMutex = xSemaphoreCreateMutex(); // API MUTEX
 

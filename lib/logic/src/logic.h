@@ -5,6 +5,7 @@
 #include <layout.h>
 #include <config.h>
 #include <api.h>
+#include <settings.h>
 
 // SL:s "state"-fält för en avgång.
 typedef enum {
@@ -44,10 +45,6 @@ typedef struct {
 extern Departure departures[MAX_DEPARTURES];
 extern int departureCount;
 
-// Filterinställningar (definierade i main.cpp).
-extern volatile int g_walkMinutes;
-extern volatile int g_directionCode;
-
 // Minuter kvar till avgång, räknat NU och inte vid hämtningen. Det är detta
 // som gör att nedräkningen tickar mellan hämtningarna. Negativt = redan gått.
 int departure_minsUntil(const Departure* d);
@@ -65,29 +62,29 @@ int  departures_rowCapacity(void);
 void drawRow(int row, const Departure* departure, int yOffset = 0);
 void renderMainFromArray(int startIndex);
 
-void mainTask(void);
 void renderBoot(void);
-void renderMainMenu(void);
-void renderDisplayMenu(void);
+void renderMainMenu(void);      // karusellen
 void renderBrightness(void);
 void renderColourwayMenu(void);
-void renderSystemSettings(void);
+void renderQR(void);            // nätverksskärmen; QR-koden ritas i fas 4
+void renderSystem(void);
 void renderStation(int navIndex, bool walkEditing, int directionCode, int walkMinutes);
 void mainMenuWrap();
-void listClamp(int count, int visible);
+
+// Antal poster i karusellen (definieras i logic.cpp).
+extern const int kMenuItemCount;
 
 // Globalt Deklarerade Structs
 typedef enum {
   STATE_BOOT,
-  STATE_INIT,
-  STATE_MENU,
-  STATE_DEPARTURES,
-  STATE_DISPLAY_MENU,
+  STATE_DEPARTURES,        // hemskärmen
+  STATE_MENU,              // karusellen
   STATE_BRIGHTNESS,
   STATE_COLOURWAY,
-  STATE_STATION,
-  STATE_STATION_WALKTIME,
-  STATE_SYSTEM_SETTINGS
+  STATE_STATION,           // TILLFÄLLIG — ersätts av webbportalen i fas 4
+  STATE_STATION_WALKTIME,  // TILLFÄLLIG — dito
+  STATE_QR,
+  STATE_SYSTEM
 } AppState;
 
 typedef struct {
@@ -101,5 +98,4 @@ typedef struct {
 } UiState;
 
 extern UiState ui;
-extern volatile uint16_t g_colourway;
 extern volatile bool g_fetching;
