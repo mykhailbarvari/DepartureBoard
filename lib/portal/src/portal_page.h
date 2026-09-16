@@ -128,7 +128,11 @@ function renderModes(){
 function load(){
   j("/api/settings").then(function(s){
     S = s;
-    $("curSite").textContent = (s.siteName || "") + " (" + s.siteId + ")";
+    // Namnet fylls i av enheten ur avgangssvaret; direkt efter en
+    // hallplatsandring kan det dröja till nasta hamtning.
+    $("curSite").textContent = s.siteName
+      ? s.siteName + " (" + s.siteId + ")"
+      : "hallplats " + s.siteId;
     $("dir").value = s.directionCode;
     $("walk").value = s.walkMinutes;
     $("bri").value = s.brightness;

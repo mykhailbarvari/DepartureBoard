@@ -181,6 +181,7 @@ FetchResult api_fetch_departures(int siteId) {
   f["expected"]                  = true;
   f["scheduled"]                 = true;
   f["stop_point"]["designation"] = true;
+  f["stop_area"]["name"]         = true;
   // Bara importance_level — vi behöver veta ATT det finns en störning, inte
   // texten. Meddelandena är långa och skulle äta heap i onödan.
   f["deviations"][0]["importance_level"] = true;
@@ -206,6 +207,19 @@ FetchResult api_fetch_departures(int siteId) {
   int tempCount = 0;
   const time_t now = time(nullptr);
   const bool clockValid = (now > 1000000UL);
+
+  // Hållplatsens namn följer med varje avgång. SL har ingen endpoint för att
+  // slå upp ett site-id (/v1/sites/<id> svarar 501), så det här är enda
+  // sättet att få namnet utan att ladda hela hållplatslistan på 1,3 MB.
+  //
+  // På bytespunkter förekommer flera stop_area-namn under samma site —
+  // T-Centralen 49 gånger mot Stockholm City 14 — så det vanligaste vinner.
+  // Görs bara när namnet saknas: väljer användaren hållplats i portalen är
+  // det namnet hämtat ur SL:s egen hållplatslista och ska inte skrivas över.
+  struct NameTally { char name[32]; uint16_t n; };
+  NameTally tally[6];
+  int tallyCount = 0;
+  const bool wantName = (g_settings.siteName[0] == 0);
 
   for (JsonObject d : deps) {
     if (tempCount >= MAX_DEPARTURES) break;
@@ -248,11 +262,35 @@ FetchResult api_fetch_departures(int siteId) {
       out->delayMin = (int8_t)diff;
     }
 
+    if (wantName) {
+      const char* area = d["stop_area"]["name"] | "";
+      if (area[0]) {
+        int k = 0;
+        for (; k < tallyCount; k++) {
+          if (strcmp(tally[k].name, area) == 0) { tally[k].n++; break; }
+        }
+        if (k == tallyCount && tallyCount < (int)(sizeof(tally) / sizeof(tally[0]))) {
+          copyStr(tally[tallyCount].name, sizeof(tally[tallyCount].name), area);
+          tally[tallyCount].n = 1;
+          tallyCount++;
+        }
+      }
+    }
+
     // Släng avgångar som redan gått. Gör det bara när klockan är pålitlig —
     // annars vore jämförelsen mot en 1970-klocka meningslös.
     if (clockValid && out->depEpoch && out->depEpoch < now - 60) continue;
 
     tempCount++;
+  }
+
+  if (wantName && tallyCount > 0) {
+    int best = 0;
+    for (int i = 1; i < tallyCount; i++) {
+      if (tally[i].n > tally[best].n) best = i;
+    }
+    copyStr(g_settings.siteName, sizeof(g_settings.siteName), tally[best].name);
+    settings_save();   // namnet är stabilt, så det här sker i praktiken en gång
   }
 
   qsort(s_temp, tempCount, sizeof(Departure), cmpByDeparture);
