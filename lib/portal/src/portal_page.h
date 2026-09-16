@@ -59,50 +59,46 @@ button:disabled{opacity:.5;cursor:default}
 
 <section id="wifiCard">
 <h2>WiFi</h2>
-<label for="ssid">Natverk</label>
+<label for="ssid">Nätverk</label>
 <div class="row">
-  <select id="ssid"><option value="">-- valj --</option></select>
-  <button class="sec" style="flex:0 0 96px;margin:0" id="scan">Sok</button>
+  <select id="ssid"><option value="">-- välj --</option></select>
+  <button class="sec" style="flex:0 0 96px;margin:0" id="scan">Sök</button>
 </div>
-<label for="pass">Losenord</label>
-<input id="pass" type="password" autocomplete="off" placeholder="lamna tomt for oppet nat">
+<label for="pass">Lösenord</label>
+<input id="pass" type="password" autocomplete="off" placeholder="lämna tomt för öppet nät">
 <button id="saveWifi">Anslut</button>
 <p class="note" id="wifiNote"></p>
 </section>
 
 <section>
-<h2>Hallplats</h2>
+<h2>Hållplats</h2>
 <p class="cur">Vald: <strong id="curSite">-</strong></p>
-<label for="q">Sok hallplats</label>
+<label for="q">Sök hållplats</label>
 <input id="q" placeholder="t.ex. Gullmarsplan" autocomplete="off">
 <div class="hits" id="hits" hidden></div>
 <p class="note" id="siteNote"></p>
 </section>
 
 <section>
-<h2>Avgangar</h2>
+<h2>Avgångar</h2>
 <label>Trafikslag <span class="note">(inget valt = alla)</span></label>
 <div class="chips" id="modes"></div>
 <label for="dir">Riktning</label>
 <select id="dir">
-  <option value="0">Bada</option><option value="1">1</option><option value="2">2</option>
+  <option value="0">Båda</option><option value="1">1</option><option value="2">2</option>
 </select>
-<label for="walk">Gangtid till hallplatsen (min)</label>
+<label for="walk">Gångtid till hållplatsen (min)</label>
 <input id="walk" type="number" min="0" max="60" step="1">
-<p class="note">Avgangar som gar tidigare an sa doljs.</p>
+<p class="note">Avgångar som går tidigare än så döljs.</p>
 </section>
 
 <section>
 <h2>Utseende</h2>
 <label for="bri">Ljusstyrka <span id="briVal"></span></label>
 <input id="bri" type="range" min="0" max="255">
-<label for="col">Fargtema</label>
-<!-- RGB565, maste matcha COLOR_* i display.h exakt -->
-<select id="col">
-  <option value="18202">Turkos</option>
-  <option value="64800">Orange</option>
-  <option value="1024">Gron</option>
-</select>
+<label for="col">Färgtema</label>
+<!-- Fylls från /api/settings: enheten äger listan, sidan har ingen egen kopia -->
+<select id="col"></select>
 </section>
 
 <button id="save">Spara</button>
@@ -111,8 +107,8 @@ button:disabled{opacity:.5;cursor:default}
 
 <script>
 var S = {}, sites = null, loading = false;
-var MODES = [["BUS","Buss",1],["METRO","Tunnelbana",2],["TRAIN","Pendeltag",4],
-             ["TRAM","Sparvagn",8],["SHIP","Bat",16]];
+var MODES = [["BUS","Buss",1],["METRO","Tunnelbana",2],["TRAIN","Pendeltåg",4],
+             ["TRAM","Spårvagn",8],["SHIP","Båt",16]];
 
 function $(id){ return document.getElementById(id); }
 function j(u,o){ return fetch(u,o).then(function(r){
@@ -137,17 +133,27 @@ function load(){
     $("walk").value = s.walkMinutes;
     $("bri").value = s.brightness;
     $("briVal").textContent = Math.round(s.brightness*100/255) + "%";
-    $("col").value = s.colourway;
+    var sel = $("col");
+    sel.innerHTML = "";
+    (s.themes || []).forEach(function(th){
+      var o = document.createElement("option");
+      o.value = th.v; o.textContent = th.n;
+      sel.appendChild(o);
+    });
+    sel.value = s.colourway;
     renderModes();
     return j("/api/status");
   }).then(function(st){
     if(st.ap){
-      $("status").innerHTML = "Enheten kor sitt eget natverk. <b>Valj hemnatverk nedan forst</b> - hallplatssokning kraver internet.";
-      $("wifiNote").innerHTML = '<span class="note">Efter anslutning: aterga till ditt hemnatverk och skanna QR-koden pa panelen igen.</span>';
+      $("status").innerHTML = "Enheten kör sitt eget nätverk. <b>Välj hemnätverk nedan först</b> — hållplatssökning kräver internet.";
+      $("wifiNote").innerHTML = '<span class="note">Efter anslutning: återgå till ditt hemnätverk och skanna QR-koden på panelen igen.</span>';
     } else {
-      $("status").innerHTML = 'Ansluten till <b>' + st.ssid + '</b> - ' + st.ip;
+      $("status").innerHTML = 'Ansluten till <b>' + st.ssid + '</b> — ' + st.ip;
+      // Nätverket är redan valt. Vill man byta: håll inne encodern under
+      // uppstart för att tvinga fram enhetens eget nät igen.
+      $("wifiCard").hidden = true;
     }
-  }).catch(function(e){ $("status").innerHTML = '<span class="err">Kunde inte lasa installningar</span>'; });
+  }).catch(function(e){ $("status").innerHTML = '<span class="err">Kunde inte läsa inställningar</span>'; });
 }
 
 $("bri").oninput = function(){ $("briVal").textContent = Math.round(this.value*100/255) + "%"; };
@@ -155,23 +161,23 @@ $("bri").oninput = function(){ $("briVal").textContent = Math.round(this.value*1
 $("scan").onclick = function(){
   var b = this; b.disabled = true; b.textContent = "...";
   j("/api/wifi/scan").then(function(list){
-    var s = $("ssid"); s.innerHTML = '<option value="">-- valj --</option>';
+    var s = $("ssid"); s.innerHTML = '<option value="">-- välj --</option>';
     list.forEach(function(n){
       var o = document.createElement("option");
       o.value = n.ssid; o.textContent = n.ssid + "  (" + n.rssi + " dBm)";
       s.appendChild(o);
     });
-  }).catch(function(){ $("wifiNote").innerHTML = '<span class="err">Sokning misslyckades</span>'; })
-   .then(function(){ b.disabled = false; b.textContent = "Sok"; });
+  }).catch(function(){ $("wifiNote").innerHTML = '<span class="err">Sökning misslyckades</span>'; })
+   .then(function(){ b.disabled = false; b.textContent = "Sök"; });
 };
 
 $("saveWifi").onclick = function(){
   var ssid = $("ssid").value;
-  if(!ssid){ $("wifiNote").innerHTML = '<span class="err">Valj ett natverk</span>'; return; }
+  if(!ssid){ $("wifiNote").innerHTML = '<span class="err">Välj ett nätverk</span>'; return; }
   this.disabled = true;
   j("/api/wifi", {method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({ssid: ssid, pass: $("pass").value})})
-   .then(function(){ $("wifiNote").innerHTML = '<span class="ok">Sparat. Enheten ansluter - se panelen for IP-adress.</span>'; })
+   .then(function(){ $("wifiNote").innerHTML = '<span class="ok">Sparat. Enheten ansluter — se panelen för IP-adress.</span>'; })
    .catch(function(){ $("wifiNote").innerHTML = '<span class="err">Kunde inte spara</span>'; })
    .then(function(){ $("saveWifi").disabled = false; });
 };
@@ -180,17 +186,17 @@ function ensureSites(){
   if(sites) return Promise.resolve(sites);
   if(loading) return Promise.reject();
   loading = true;
-  $("siteNote").textContent = "Hamtar hallplatslistan (1,3 MB, en gang)...";
+  $("siteNote").textContent = "Hämtar hållplatslistan (1,3 MB, en gång)…";
   return fetch("https://transport.integration.sl.se/v1/sites?expand=false")
     .then(function(r){ return r.json(); })
     .then(function(list){
       sites = list; loading = false;
-      $("siteNote").textContent = list.length + " hallplatser laddade.";
+      $("siteNote").textContent = list.length + " hållplatser laddade.";
       return list;
     })
     .catch(function(e){
       loading = false;
-      $("siteNote").innerHTML = '<div class="warn">Kunde inte hamta hallplatslistan. Telefonen behover internet - anslut enheten till ditt WiFi forst, aterga sedan till ditt hemnatverk och oppna den har sidan via enhetens IP-adress.</div>';
+      $("siteNote").innerHTML = '<div class="warn">Kunde inte hämta hållplatslistan. Telefonen behöver internet — anslut enheten till ditt WiFi först, återgå sedan till ditt hemnätverk och öppna den här sidan via enhetens IP-adress.</div>';
       throw e;
     });
 }
@@ -207,7 +213,7 @@ $("q").oninput = function(){
         if((list[i].name || "").toLowerCase().indexOf(v) >= 0) out.push(list[i]);
       }
       var h = $("hits"); h.innerHTML = ""; h.hidden = false;
-      if(!out.length){ h.innerHTML = '<div class="hit">Inga traffar</div>'; return; }
+      if(!out.length){ h.innerHTML = '<div class="hit">Inga träffar</div>'; return; }
       out.forEach(function(s){
         var d = document.createElement("div");
         d.className = "hit";
@@ -231,7 +237,7 @@ $("save").onclick = function(){
   this.disabled = true;
   j("/api/settings", {method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify(S)})
-   .then(function(){ $("saveNote").innerHTML = '<span class="ok">Sparat - panelen uppdateras direkt.</span>'; })
+   .then(function(){ $("saveNote").innerHTML = '<span class="ok">Sparat — panelen uppdateras direkt.</span>'; })
    .catch(function(){ $("saveNote").innerHTML = '<span class="err">Kunde inte spara</span>'; })
    .then(function(){ $("save").disabled = false; });
 };

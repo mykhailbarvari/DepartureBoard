@@ -16,6 +16,26 @@
 #include <portal.h>
 
 
+// Håller ui.scrollOffset i takt med ui.selectedIndex för en lista som är
+// längre än fönstret: markeringen ska alltid vara synlig, och listan ska aldrig
+// scrolla förbi sin sista sida.
+static void listClamp(int count, int visible) {
+  if (ui.selectedIndex < 0)      ui.selectedIndex = 0;
+  if (ui.selectedIndex >= count) ui.selectedIndex = count - 1;
+
+  if (ui.selectedIndex < ui.scrollOffset)
+    ui.scrollOffset = ui.selectedIndex;
+
+  if (ui.selectedIndex >= ui.scrollOffset + visible)
+    ui.scrollOffset = ui.selectedIndex - visible + 1;
+
+  if (ui.scrollOffset < 0) ui.scrollOffset = 0;
+
+  int maxScroll = count - visible;
+  if (maxScroll < 0) maxScroll = 0;
+  if (ui.scrollOffset > maxScroll) ui.scrollOffset = maxScroll;
+}
+
 Departure departures[MAX_DEPARTURES];
 int departureCount = 0;
 
@@ -67,42 +87,18 @@ const Departure* departures_at(int visibleIndex) {
 }
 
 
-// SL:s egna linjefärger. group_of_lines är det mest specifika när det finns
-// ("Tunnelbanans gröna linje", "Blåbuss", "Pendeltåg"); annars trafikslaget.
-uint16_t departure_lineColor(const Departure* d) {
-  if (!d) return COLOR_WHITE;
-
-  const char* g = d->groupOfLines;
-  if (g[0]) {
-    if (strstr(g, "Blåbuss"))   return RGB565(  0, 122, 193);
-    if (strstr(g, "gröna"))     return RGB565(  0, 152,  95);
-    if (strstr(g, "röda"))      return RGB565(215,  25,  32);
-    if (strstr(g, "blå"))       return RGB565(  0, 122, 193);
-    if (strstr(g, "Pendeltåg")) return RGB565(220,  60, 150);
-  }
-
-  switch (d->transportMode) {
-    case TMODE_BUS:   return RGB565(217,  29,  41);  // SL:s röda stadsbuss
-    case TMODE_METRO: return RGB565(  0, 122, 193);
-    case TMODE_TRAIN: return RGB565(220,  60, 150);
-    case TMODE_TRAM:  return RGB565(230, 120,   0);
-    case TMODE_SHIP:  return RGB565(  0, 170, 190);
-    default:          return COLOR_WHITE;
-  }
-}
 
 void drawRow(int row, const Departure* departure, int yOffset) {
   int y = row * Y_OFFSET + yOffset;
 
   const bool cancelled = (departure->state == DEP_CANCELLED);
 
-  // ===== LINE: max 3 siffror, i linjens egen färg =====
+  // ===== LINE: max 3 siffror =====
   setClipX(X_LINE_START, X_LINE_END);
 
   char line3[4]; // 3 siffror + NUL
   lineCode3Digits(line3, sizeof(line3), departure->line);
-  drawString(X_LINE_START, y, line3,
-             cancelled ? COLOR_GRAY_25 : departure_lineColor(departure));
+  drawString(X_LINE_START, y, line3, COLOR_WHITE);
 
   // ===== DESTINATION: fit + abbreviation =====
   setClipX(X_DEST_START, X_DEST_END);
@@ -237,23 +233,6 @@ int departures_rowCapacity(void) {
   return buildStatusLine(buf, sizeof(buf), &c) ? (ROWS - 1) : ROWS;
 }
 
-// Tunn stapel i högerkanten: utan den syns det inte att listan fortsätter.
-static void drawScrollIndicator(int yTop, int total, int visible, int offset) {
-  if (total <= visible) return;
-
-  const int X = 127;            // X_MIN_END är 126, kolumnen är ledig
-  const int H = 64 - yTop;
-
-  int thumb = (H * visible) / total;
-  if (thumb < 3) thumb = 3;
-  if (thumb > H) thumb = H;
-
-  int maxOffset = total - visible;
-  int y = yTop + ((maxOffset > 0) ? ((H - thumb) * offset) / maxOffset : 0);
-
-  display_fillRect(X, yTop, 1, H,     COLOR_GRAY_10);
-  display_fillRect(X, y,    1, thumb, g_settings.colourway);
-}
 
 void renderMainFromArray(int startIndex) {
   // Uppdatera FÖRE de tidiga returerna nedan. Annars slutar animationen aldrig
@@ -294,7 +273,6 @@ void renderMainFromArray(int startIndex) {
     drawRow(row, d, yOffset + slide);
   }
 
-  drawScrollIndicator(yOffset, visible, rowCount, startIndex);
 
   // Statusraden ritas SIST och med egen svart botten: biblioteket klipper bara
   // i x-led, så en rad som glider uppåt ritar annars rakt in i den här ytan.
@@ -327,13 +305,30 @@ UiState ui = {
 // i fas 4, men tills portalen finns är detta enda sättet att ställa dem.
 // Ta bort posten (och STATE_STATION*) när portalen är i mål.
 static const CarouselItem kMenuItems[] = {
+  { icon_list_24,       "Avgångar"   },
   { icon_brightness_24, "Ljusstyrka" },
   { icon_palette_24,    "Färgtema"   },
   { icon_pin_24,        "Hållplats"  },   // TILLFÄLLIG — se ovan
-  { icon_qr_24,         "Nätverk"    },
+  { icon_wifi_24,       "Nätverk"    },
   { icon_gear_24,       "System"     },
 };
 const int kMenuItemCount = (int)(sizeof(kMenuItems) / sizeof(kMenuItems[0]));
+
+// Färgteman. EN sanningskälla: webbportalen hämtar den här listan via
+// /api/settings och bygger sin meny av den, i stället för att ha en egen
+// hårdkodad kopia av RGB565-värdena. Kopior glider isär — turkos skickades
+// en gång som 16576 när rätt värde var 18202, och temat matchade inte.
+const Theme kThemes[] = {
+  { COLOR_ORANGE,     "Orange" },
+  { COLOR_TURQUOISE,  "Turkos" },
+  { COLOR_DARK_GREEN, "Grön"   },
+  { COLOR_INFO,       "Blå"    },
+  { COLOR_RED,        "Röd"    },
+  { COLOR_AMBER,      "Gul"    },
+  { COLOR_PINK,       "Rosa"   },
+  { COLOR_WHITE,      "Vit"    },
+};
+const int kThemeCount = (int)(sizeof(kThemes) / sizeof(kThemes[0]));
 
 void renderMainMenu(void) {
   ui_renderCarousel(kMenuItems, kMenuItemCount, ui.selectedIndex, g_settings.colourway);
@@ -385,76 +380,69 @@ void renderBrightness(void) {
 void renderColourwayMenu(void) {
   drawTitle("Färgtema");
 
-  struct Opt { uint16_t colour; const char* name; };
-  static const Opt opts[3] = {
-    { COLOR_TURQUOISE,  "Turkos" },
-    { COLOR_ORANGE,     "Orange" },
-    { COLOR_DARK_GREEN, "Grön"   },
-  };
+  // Fonten är 12 px och skärmen 64, så bara fyra rader ryms under rubriken.
+  const int VISIBLE = 4;
+  const int ROW_H   = 12;
+  const int TOP     = 14;   // 2 px luft under rubriken
 
-  for (int i = 0; i < 3; i++) {
-    const int y = 17 + i * 15;
+  listClamp(kThemeCount, VISIBLE);
+
+  for (int row = 0; row < VISIBLE; row++) {
+    const int i = ui.scrollOffset + row;
+    if (i >= kThemeCount) break;
+
+    const int  y   = TOP + row * ROW_H;
     const bool sel = (ui.selectedIndex == i);
 
-    if (sel) display_fillRect(4, y + 4, 4, 4, opts[i].colour);
-    display_fillRect(14, y + 2, 9, 9, opts[i].colour);
-    drawString(30, y, opts[i].name, sel ? opts[i].colour : COLOR_GRAY_50);
+    if (sel) display_fillRect(3, y + 3, 4, 4, kThemes[i].colour);
+    display_fillRect(11, y + 2, 6, 6, kThemes[i].colour);
+    drawString(22, y, kThemes[i].name, sel ? kThemes[i].colour : COLOR_GRAY_50);
   }
 }
 
 // ------------------------------------------------------------------- NÄTVERK
 
-// QR-koden till webbportalen.
+// QR-koden till webbportalen, centrerad.
 //
-// I AP-läge är koden en WIFI:-sträng, så att skanna den ANSLUTER telefonen
-// till enhetens nät direkt — varpå captive portal öppnar konfigurationssidan
-// av sig själv. Användaren behöver inte veta någonting i förväg.
+// I AP-läge är koden en WIFI:-sträng, så att skanna den ANSLUTER telefonen till
+// enhetens nät direkt — varpå captive portal öppnar konfigurationssidan av sig
+// själv. Den koden är version 2 (58 px) och fyller höjden, så den får ingen
+// text under sig; det finns ändå ingen IP att visa.
 //
-// I STA-läge är den en URL till enhetens LAN-adress. Versaler med flit:
-// det gör att QR:en kodas i alfanumeriskt läge och ryms i version 1 (21x21),
-// vilket ger 2 px per modul på 64 px höjd istället för 1. URL:ers schema och
-// värdnamn är skiftlägesokänsliga, så telefonen bryr sig inte.
+// I STA-läge är den en URL till LAN-adressen. Versaler med flit: det håller
+// koden i alfanumeriskt läge och därmed i version 1 (50 px), vilket lämnar
+// plats åt IP-raden. URL:ers schema och värdnamn är skiftlägesokänsliga.
 void renderQR(void) {
   char payload[64];
-  bool drawn;
 
   if (portal_isAp()) {
-    // 31 tecken — ryms precis i version 2 (32 byte i byte-läge). Håll
-    // AP-namnet kort om strängen ändras.
     snprintf(payload, sizeof(payload), "WIFI:T:nopass;S:%s;;", portal_apSsid());
-    drawn = ui_drawQR(payload, 31, 3, 58);
-
-    drawString(64, 4,  "Skanna", g_settings.colourway);
-    drawString(64, 18, "for att", COLOR_GRAY_90);
-    drawString(64, 32, "ansluta", COLOR_GRAY_90);
-    if (!drawn) drawString(64, 46, "QR fel", COLOR_ERROR);
+    if (!ui_drawQR(payload, 64, 3, 58)) {
+      drawCentered(26, "QR fel", COLOR_ERROR);
+    }
     return;
   }
 
   if (WiFi.status() != WL_CONNECTED) {
-    drawTitle("Nätverk");
-    drawString(2, 26, "Ansluter...", COLOR_WARNING);
+    drawCentered(26, "Ansluter...", COLOR_WARNING);
     return;
   }
 
   const String ip = WiFi.localIP().toString();
-
   snprintf(payload, sizeof(payload), "HTTP://%s", ip.c_str());
-  drawn = ui_drawQR(payload, 31, 3, 58);
 
-  char buf[40];
+  // Storleken hämtas i förväg så IP-raden hamnar rätt även om koden skulle
+  // behöva en högre version än väntat.
+  const int size = ui_qrSize(payload, 50);
+  if (size == 0 || !ui_drawQR(payload, 64, 0, 50)) {
+    drawCentered(26, "QR fel", COLOR_ERROR);
+    return;
+  }
 
-  fitTextToWidthPx(buf, sizeof(buf), WiFi.SSID().c_str(), 62);
-  drawString(64, 4, buf, COLOR_GRAY_90);
-
-  fitTextToWidthPx(buf, sizeof(buf), ip.c_str(), 62);
-  drawString(64, 18, buf, COLOR_WHITE);
-
-  snprintf(buf, sizeof(buf), "%d dBm", (int)WiFi.RSSI());
-  drawString(64, 32, buf, COLOR_GRAY_50);
-
-  if (drawn) drawString(64, 46, "Skanna", g_settings.colourway);
-  else       drawString(64, 46, "QR fel", COLOR_ERROR);
+  char buf[24];
+  fitTextToWidthPx(buf, sizeof(buf), ip.c_str(), 124);
+  const int w = measureTextPx(buf);
+  drawString((128 - w) / 2, size + 1, buf, COLOR_GRAY_50);
 }
 
 // -------------------------------------------------------------------- SYSTEM

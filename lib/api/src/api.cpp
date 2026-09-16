@@ -174,7 +174,6 @@ FetchResult api_fetch_departures(int siteId) {
   JsonObject f = filter["departures"].add<JsonObject>();
   f["line"]["designation"]       = true;
   f["line"]["transport_mode"]    = true;
-  f["line"]["group_of_lines"]    = true;
   f["destination"]               = true;
   f["display"]                   = true;
   f["direction_code"]            = true;
@@ -224,7 +223,6 @@ FetchResult api_fetch_departures(int siteId) {
     copyStr(out->destination,  sizeof(out->destination),  dest);
     copyStr(out->display,      sizeof(out->display),      disp);
     copyStr(out->stopPoint,    sizeof(out->stopPoint),    d["stop_point"]["designation"] | "");
-    copyStr(out->groupOfLines, sizeof(out->groupOfLines), d["line"]["group_of_lines"] | "");
 
     out->directionCode = (uint8_t)(d["direction_code"] | 0);
     out->state         = parseState(d["state"] | (const char*)nullptr);

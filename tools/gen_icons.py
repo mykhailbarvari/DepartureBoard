@@ -49,6 +49,26 @@ def line(g, x0, y0, x1, y1, v=1):
         put(g, x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, v)
 
 
+def norm_angle(a):
+    """atan2 ger (-180, 180]; hanterar intervall som wrappar forbi +/-180."""
+    while a <= -180: a += 360
+    while a > 180:   a -= 360
+    return a
+
+
+def arc(g, cx, cy, r_out, r_in, a0, a1, v=1):
+    lo, hi = norm_angle(a0), norm_angle(a1)
+    for y in range(H):
+        for x in range(W):
+            d = math.hypot(x - cx, y - cy)
+            if not (r_in <= d <= r_out):
+                continue
+            a = math.degrees(math.atan2(y - cy, x - cx))
+            inside = (lo <= a <= hi) if lo <= hi else (a >= lo or a <= hi)
+            if inside:
+                g[y][x] = v
+
+
 # ---------------------------------------------------------------- LJUSSTYRKA
 def icon_sun():
     g = blank()
@@ -71,25 +91,25 @@ def icon_palette():
     return g
 
 
-# -------------------------------------------------------------------- QR-KOD
-def icon_qr():
-    """Tre finder-monster + nagra moduler: last direkt som 'QR'."""
+# ------------------------------------------------------------------- NATVERK
+def icon_wifi():
+    """Klassiska WiFi-bagar. Baspunkten pa y=17.5 centrerar symbolen vertikalt;
+    med 19.5 blev den bottentung med sju tomma rader over."""
     g = blank()
+    by = 17.5
+    for r in (13.5, 9.5, 5.5):
+        arc(g, CX, by, r, r - 1.9, -142, -38)
+    disc(g, CX, by, 1.9)
+    return g
 
-    def finder(x0, y0):
-        rect(g, x0, y0, 7, 7)                 # yttre 7x7
-        rect(g, x0 + 1, y0 + 1, 5, 5, 0)      # hal
-        rect(g, x0 + 2, y0 + 2, 3, 3)         # kärna
 
-    finder(1, 1)
-    finder(16, 1)
-    finder(1, 16)
-
-    # glesa moduler i datafaltet, sa det lases som en QR och inte tre rutor
-    for (x, y) in ((10, 2), (12, 4), (10, 6), (13, 8), (9, 10),
-                   (16, 10), (19, 12), (11, 13), (14, 15), (17, 17),
-                   (20, 19), (12, 18), (16, 21), (10, 21), (21, 15)):
-        rect(g, x, y, 2, 2)
+# ----------------------------------------------------------------- AVGANGAR
+def icon_list():
+    """Tre vagrata staplar av olika langd. Listsymbol framfor buss, eftersom
+    tavlan aven visar tunnelbana, pendeltag och sparvagn."""
+    g = blank()
+    for i, (x0, w) in enumerate(((3, 18), (3, 13), (3, 16), (3, 11))):
+        rect(g, x0, 4 + i * 5, w, 3)
     return g
 
 
@@ -137,7 +157,8 @@ ICONS = [
     ("icon_brightness_24", icon_sun()),
     ("icon_palette_24",    icon_palette()),
     ("icon_pin_24",        icon_pin()),
-    ("icon_qr_24",         icon_qr()),
+    ("icon_wifi_24",       icon_wifi()),
+    ("icon_list_24",       icon_list()),
     ("icon_gear_24",       icon_gear()),
 ]
 

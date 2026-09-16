@@ -11,6 +11,22 @@
 // i praktiken när kontrasten är så här hög.
 #define QR_QUIET 2
 
+// 1 = lysande moduler på svart botten. 0 = svarta moduler på vit botten,
+// vilket är vad QR-specen förutsätter.
+//
+// Avvägningen är inte självklar på just en LED-panel. Inverterade koder läses
+// inte av alla telefonkameror, men en mestadels vit yta på en emissiv panel kan
+// blomma ut och smeta ihop modulerna. Går koden inte att skanna: sätt 0 här.
+#define QR_INVERTED 1
+
+#if QR_INVERTED
+  #define QR_BG     COLOR_BLACK
+  #define QR_MODULE COLOR_WHITE
+#else
+  #define QR_BG     COLOR_WHITE
+  #define QR_MODULE COLOR_BLACK
+#endif
+
 // (33*33 + 7) / 8 = 137 byte för version 4.
 #define QR_BUF_BYTES 137
 static uint8_t s_modules[QR_BUF_BYTES];
@@ -90,15 +106,16 @@ bool ui_drawQR(const char* text, int xCenter, int yTop, int maxSize) {
   const int side = (qr.size + 2 * QR_QUIET) * scale;
   const int x0   = xCenter - side / 2;
 
-  // Ljus botten, tysta zonen inkluderad.
-  display_fillRect(x0, yTop, side, side, COLOR_WHITE);
+  // Botten ritas alltid explicit, tysta zonen inkluderad — den behövs även när
+  // den har samma färg som panelen, så intilliggande text inte kan krypa in.
+  display_fillRect(x0, yTop, side, side, QR_BG);
 
   for (uint8_t my = 0; my < qr.size; my++) {
     for (uint8_t mx = 0; mx < qr.size; mx++) {
       if (!qrcode_getModule(&qr, mx, my)) continue;
       display_fillRect(x0   + (QR_QUIET + mx) * scale,
                        yTop + (QR_QUIET + my) * scale,
-                       scale, scale, COLOR_BLACK);
+                       scale, scale, QR_MODULE);
     }
   }
 

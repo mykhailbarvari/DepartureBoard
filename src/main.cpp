@@ -268,26 +268,39 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
             // Index följer kMenuItems i logic.cpp.
             switch (ui.selectedIndex) {
               case 0:
-                ui.state = STATE_BRIGHTNESS;
+                ui.state = STATE_DEPARTURES;
+                ui.scrollOffset = 0;
+                g_dataUpdated = false;
+                requestFetch();   // färsk data direkt när man öppnar listan
                 break;
 
               case 1:
-                ui.state = STATE_COLOURWAY;
-                ui.selectedIndex = (g_settings.colourway == COLOR_TURQUOISE) ? 0
-                                 : (g_settings.colourway == COLOR_DARK_GREEN) ? 2 : 1;
+                ui.state = STATE_BRIGHTNESS;
                 break;
 
-              case 2:  // TILLFÄLLIG post, se kMenuItems
+              case 2: {
+                // Börja på det tema som är valt just nu.
+                ui.state = STATE_COLOURWAY;
+                int idx = 0;
+                for (int i = 0; i < kThemeCount; i++) {
+                  if (kThemes[i].colour == g_settings.colourway) { idx = i; break; }
+                }
+                ui.selectedIndex = idx;
+                ui.scrollOffset  = 0;
+                break;
+              }
+
+              case 3:  // TILLFÄLLIG post, se kMenuItems
                 ui.state = STATE_STATION;
                 ui.scrollOffset = 0;
                 break;
 
-              case 3:
+              case 4:
                 ui.returnTo = STATE_MENU;
                 ui.state = STATE_QR;
                 break;
 
-              case 4:
+              case 5:
                 ui.state = STATE_SYSTEM;
                 break;
             }
@@ -315,7 +328,7 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
           if (press != PRESS_NONE) {
             display_saveBrightness();
             ui.state = STATE_MENU;
-            ui.selectedIndex = 0;
+            ui.selectedIndex = 1;
             ui.dirty = true;
           }
         }
@@ -323,25 +336,26 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
 
       case STATE_COLOURWAY:
         {
-          if (prev && ui.selectedIndex > 0) { ui.selectedIndex--; ui.dirty = true; }
-          if (next && ui.selectedIndex < 2) { ui.selectedIndex++; ui.dirty = true; }
+          // Renderaren klampar scrollen mot de fyra synliga raderna.
+          if (prev && ui.selectedIndex > 0)                { ui.selectedIndex--; ui.dirty = true; }
+          if (next && ui.selectedIndex < kThemeCount - 1)  { ui.selectedIndex++; ui.dirty = true; }
 
           if (press == PRESS_LONG) {   // ångra utan att spara
             ui.state = STATE_MENU;
-            ui.selectedIndex = 1;
+            ui.selectedIndex = 2;
+            ui.scrollOffset = 0;
             ui.dirty = true;
             break;
           }
 
           if (press == PRESS_SHORT) {
-            switch (ui.selectedIndex) {
-              case 0: g_settings.colourway = COLOR_TURQUOISE;  break;
-              case 1: g_settings.colourway = COLOR_ORANGE;     break;
-              case 2: g_settings.colourway = COLOR_DARK_GREEN; break;
+            if (ui.selectedIndex >= 0 && ui.selectedIndex < kThemeCount) {
+              g_settings.colourway = kThemes[ui.selectedIndex].colour;
             }
             settings_save();
             ui.state = STATE_MENU;
-            ui.selectedIndex = 1;
+            ui.selectedIndex = 2;
+            ui.scrollOffset = 0;
             ui.dirty = true;
           }
         }
@@ -353,7 +367,7 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
             // Tillbaka dit man kom ifrån: hemskärmen vid långtryck där,
             // annars karusellen.
             ui.state = (ui.returnTo == STATE_DEPARTURES) ? STATE_DEPARTURES : STATE_MENU;
-            ui.selectedIndex = 3;
+            ui.selectedIndex = 4;
             ui.dirty = true;
             break;
           }
@@ -367,7 +381,7 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
         {
           if (press != PRESS_NONE) {
             ui.state = STATE_MENU;
-            ui.selectedIndex = 4;
+            ui.selectedIndex = 5;
             ui.dirty = true;
             break;
           }

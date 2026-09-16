@@ -33,7 +33,6 @@ typedef struct {
   char     display[8];      // råsträng från SL, t.ex. "5 min" eller "14:35"
   char     depTime[6];      // HH:MM från expected, t.ex. "14:35"
   char     stopPoint[4];    // läge, t.ex. "A" (tomt på små hållplatser)
-  char     groupOfLines[28];// t.ex. "Tunnelbanans gröna linje", "Blåbuss"
   time_t   depEpoch;        // faktisk avgångstid (expected)
   time_t   schedEpoch;      // tidtabellstid (scheduled)
   int8_t   delayMin;        // expected - scheduled i minuter, negativt = tidig
@@ -54,8 +53,6 @@ int departure_minsUntil(const Departure* d);
 // och scroll-klampning aldrig kan glida isär.
 bool departure_passesFilter(const Departure* d);
 
-// Linjens färg enligt SL:s egen färgsättning (group_of_lines/transport_mode).
-uint16_t departure_lineColor(const Departure* d);
 int  departures_visibleCount(void);
 const Departure* departures_at(int visibleIndex);
 int  departures_rowCapacity(void);
@@ -78,6 +75,16 @@ void mainMenuStep(int delta);
 
 // Antal poster i karusellen (definieras i logic.cpp).
 extern const int kMenuItemCount;
+
+// Färgtema. Portalen läser den här listan via /api/settings, så att den och
+// enheten omöjligt kan ha olika uppfattning om vad ett tema är.
+typedef struct {
+  uint16_t    colour;
+  const char* name;
+} Theme;
+
+extern const Theme kThemes[];
+extern const int   kThemeCount;
 
 // Globalt Deklarerade Structs
 typedef enum {

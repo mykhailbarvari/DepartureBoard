@@ -7,6 +7,7 @@
 #include <ArduinoJson.h>
 #include <settings.h>
 #include <api.h>
+#include <logic.h>
 #include <string.h>
 
 // Arduino-corens inbyggda WebServer räcker för en ren konfigurationsportal och
@@ -36,11 +37,11 @@ const char* portal_apSsid(void) { return s_apSsid; }
 static void sendJson(int code, const JsonDocument& doc) {
   String out;
   serializeJson(doc, out);
-  server.send(code, "application/json", out);
+  server.send(code, "application/json; charset=utf-8", out);
 }
 
 static void handleRoot(void) {
-  server.send_P(200, "text/html", PORTAL_PAGE);
+  server.send_P(200, "text/html; charset=utf-8", PORTAL_PAGE);
 }
 
 static void handleGetSettings(void) {
@@ -52,6 +53,16 @@ static void handleGetSettings(void) {
   d["siteId"]        = g_settings.siteId;
   d["siteName"]      = g_settings.siteName;
   d["transportMask"] = g_settings.transportMask;
+
+  // Temana kommer från enheten i stället för att dupliceras i sidan. En kopia
+  // av RGB565-värdena skulle glida isär förr eller senare.
+  JsonArray themes = d["themes"].to<JsonArray>();
+  for (int i = 0; i < kThemeCount; i++) {
+    JsonObject o = themes.add<JsonObject>();
+    o["v"] = kThemes[i].colour;
+    o["n"] = kThemes[i].name;
+  }
+
   sendJson(200, d);
 }
 
@@ -87,7 +98,7 @@ static void handlePostSettings(void) {
   settings_save();
   requestFetch();   // panelen ska visa den nya hållplatsen direkt
 
-  server.send(200, "application/json", "{\"ok\":true}");
+  server.send(200, "application/json; charset=utf-8", "{\"ok\":true}");
 }
 
 static void handleWifiScan(void) {
@@ -127,7 +138,7 @@ static void handlePostWifi(void) {
 
   // Svara FÖRE anslutningsförsöket: i AP-läge rycks telefonens anslutning
   // undan när vi byter läge, och då kommer svaret aldrig fram.
-  server.send(200, "application/json", "{\"ok\":true}");
+  server.send(200, "application/json; charset=utf-8", "{\"ok\":true}");
   delay(200);
 
   if (s_apMode) {

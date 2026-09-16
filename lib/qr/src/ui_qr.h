@@ -6,10 +6,10 @@
 //
 // Två saker som är lätta att göra fel och som den här modulen tar hand om:
 //
-//  1. Koden ritas MÖRK PÅ LJUS — svarta moduler på vit botten, inklusive den
-//     tysta zonen. Det är frestande att rita tvärtom på en LED-panel (lysande
-//     moduler mot svart), men en inverterad QR läses inte av de flesta
-//     telefonkameror.
+//  1. Polariteten styrs av QR_INVERTED i ui_qr.cpp. Default är lysande moduler
+//     på svart botten, vilket ger bäst kontrast på en emissiv panel. Läser
+//     inte telefonen koden: sätt QR_INVERTED till 0 för den polaritet
+//     QR-specen förutsätter (svart på vitt).
 //
 //  2. Versionen väljs utifrån en egen kapacitetstabell. Biblioteket
 //     (ricmoo/QRCode) har "@TODO: Return error if data is too big" i koden och

@@ -11,7 +11,8 @@
 #define CAR_DOTS_Y    52   // punktindikatorns övre kant
 #define CAR_DOT_D     3    // punktens sida i px
 #define CAR_DOT_GAP   5    // luft mellan punkter
-#define CAR_ARROW_W   4
+#define CAR_ARROW_W   6    // ger 11 px hog pil (2*(W-1)+1)
+#define CAR_ARROW_Y   32   // panelens vertikala mitt
 
 // Förskjutningen i px. Positiv = innehållet ligger till höger om sin vila,
 // alltså precis efter ett "nästa"-steg.
@@ -108,9 +109,8 @@ void ui_renderCarousel(const CarouselItem* items, int count, int selected,
 
   // Pilar och punkter ritas SIST, ovanpå det som glider.
   if (count > 1) {
-    const int yc = CAR_ICON_Y + UI_ICON_H / 2;
-    drawArrow(2,                       yc, true,  arrowColor(-1, accent));
-    drawArrow(CAR_W - 2 - CAR_ARROW_W, yc, false, arrowColor(+1, accent));
+    drawArrow(2,                       CAR_ARROW_Y, true,  arrowColor(-1, accent));
+    drawArrow(CAR_W - 2 - CAR_ARROW_W, CAR_ARROW_Y, false, arrowColor(+1, accent));
   }
 
   // Punktindikator. Den fyllda punkten glider med innehållet: vid rörelsens

@@ -12,5 +12,6 @@
 extern const uint8_t icon_brightness_24[UI_ICON_BYTES];
 extern const uint8_t icon_palette_24[UI_ICON_BYTES];
 extern const uint8_t icon_pin_24[UI_ICON_BYTES];
-extern const uint8_t icon_qr_24[UI_ICON_BYTES];
+extern const uint8_t icon_wifi_24[UI_ICON_BYTES];
+extern const uint8_t icon_list_24[UI_ICON_BYTES];
 extern const uint8_t icon_gear_24[UI_ICON_BYTES];
