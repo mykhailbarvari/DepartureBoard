@@ -256,6 +256,11 @@ static void drawScrollIndicator(int yTop, int total, int visible, int offset) {
 }
 
 void renderMainFromArray(int startIndex) {
+  // Uppdatera FÖRE de tidiga returerna nedan. Annars slutar animationen aldrig
+  // när listan är tom, och DisplayTask ritar om i 20 ms-takt i all evighet.
+  ui_animUpdate(&ui.scrollAnim);
+  const int slide = (int)ui.scrollAnim.current;
+
   if (departureCount == 0) {
     renderEmptyState();
     return;
@@ -275,21 +280,32 @@ void renderMainFromArray(int startIndex) {
   const int yOffset  = showStatus ? Y_OFFSET : 0;
   const int rowCount = departures_rowCapacity();
 
+  // Under en glidning behövs en extra rad i var ände, annars uppstår ett tomt
+  // band där innehållet kommit ifrån respektive är på väg.
+  const int extra = (slide != 0) ? 1 : 0;
+
+  for (int row = -extra; row < rowCount + extra; row++) {
+    const int i = startIndex + row;
+    if (i < 0 || i >= visible) continue;
+
+    const Departure* d = departures_at(i);
+    if (!d) continue;
+
+    drawRow(row, d, yOffset + slide);
+  }
+
+  drawScrollIndicator(yOffset, visible, rowCount, startIndex);
+
+  // Statusraden ritas SIST och med egen svart botten: biblioteket klipper bara
+  // i x-led, så en rad som glider uppåt ritar annars rakt in i den här ytan.
   if (showStatus) {
+    display_fillRect(0, 0, 128, Y_OFFSET, COLOR_BLACK);
     setClipX(0, 126);
     drawString(1, 0, status, statusColor);
     clearClipX();
   }
-
-  int row = 0;
-  for (int i = startIndex; i < visible && row < rowCount; i++, row++) {
-    const Departure* d = departures_at(i);
-    if (!d) break;
-    drawRow(row, d, yOffset + (int)ui.bouncePixels);
-  }
-
-  drawScrollIndicator(yOffset, visible, rowCount, startIndex);
 }
+
 
 
 void renderBoot(void) {
@@ -327,6 +343,13 @@ void mainMenuWrap() {
   if (ui.selectedIndex < 0)              ui.selectedIndex = kMenuItemCount - 1;
   if (ui.selectedIndex >= kMenuItemCount) ui.selectedIndex = 0;
   ui.scrollOffset = 0;  // karusellen scrollar aldrig
+}
+
+void mainMenuStep(int delta) {
+  if (delta == 0) return;
+  ui.selectedIndex += delta;
+  mainMenuWrap();
+  ui_carouselNudge(delta);
 }
 
 // ------------------------------------------------------- GEMENSAM SKÄRMHJÄLP

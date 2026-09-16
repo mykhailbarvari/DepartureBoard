@@ -6,6 +6,7 @@
 #include <config.h>
 #include <api.h>
 #include <settings.h>
+#include <ui_anim.h>
 
 // SL:s "state"-fält för en avgång.
 typedef enum {
@@ -71,6 +72,10 @@ void renderSystem(void);
 void renderStation(int navIndex, bool walkEditing, int directionCode, int walkMinutes);
 void mainMenuWrap();
 
+// Stegar karusellen ett steg och startar den glidande övergången.
+// delta = +1 nästa post, -1 föregående.
+void mainMenuStep(int delta);
+
 // Antal poster i karusellen (definieras i logic.cpp).
 extern const int kMenuItemCount;
 
@@ -93,9 +98,8 @@ typedef struct {
   int scrollOffset;
   bool dirty;
   uint32_t bootStartMs;
-  int8_t bouncePixels;
-  uint32_t bounceStartMs;
-  AppState returnTo;   // dit "tillbaka" leder från skärmar som nås flera vägar
+  UiAnim   scrollAnim;  // avgångslistans glidande scroll
+  AppState returnTo;    // dit "tillbaka" leder från skärmar som nås flera vägar
 } UiState;
 
 extern UiState ui;

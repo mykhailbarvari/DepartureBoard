@@ -6,6 +6,7 @@
 #include <config.h>
 #include <settings.h>
 #include <portal.h>
+#include <ui_carousel.h>
 #include <time.h>
 #include "esp_sleep.h"
 #include "esp_wifi.h"
@@ -29,6 +30,35 @@ SemaphoreHandle_t gDeparturesMutex;
 // Används när användaren gör något som bör ge färsk data omedelbart.
 void requestFetch(void) {
   if (hApi) xTaskNotifyGive(hApi);
+}
+
+// Mätning av bildrutetid. Aktivera med -DUI_FRAME_PROFILE i platformio.ini för
+// att se hur lång tid en hel bildruta tar — det avgör hur lågt UI_FRAME_MS kan
+// sättas. beginFrame() målar om hela DMA-bufferten och är den tunga delen.
+#ifdef UI_FRAME_PROFILE
+static void frameProfile(const char* what, uint32_t t0, uint32_t* peak) {
+  const uint32_t us = micros() - t0;
+  if (us > *peak) {
+    *peak = us;
+    Serial.printf("[frame] %s: %lu us (max)", what, (unsigned long)us);
+    Serial.println();
+  }
+}
+  #define FRAME_PROFILE_BEGIN()   const uint32_t _t0 = micros()
+  #define FRAME_PROFILE_END(what) do { static uint32_t _peak = 0; frameProfile(what, _t0, &_peak); } while (0)
+#else
+  #define FRAME_PROFILE_BEGIN()   ((void)0)
+  #define FRAME_PROFILE_END(what) ((void)0)
+#endif
+
+// Pågår en rörelse som kräver fler bildrutor? Låter animationerna driva sig
+// själva, istället för att ControlLogicTask ska hålla dirty-flaggan satt.
+static bool uiAnimating(void) {
+  switch (ui.state) {
+    case STATE_MENU:       return ui_carouselAnimating();
+    case STATE_DEPARTURES: return ui_animActive(&ui.scrollAnim);
+    default:               return false;
+  }
 }
 
 // ------FreeRTOS------ IN PROGRESS
@@ -66,7 +96,7 @@ void DisplayTask(void *pv) {  // ENDAST FÖR RENDERING
       ui.dirty = true;
       wasDisabled = false;
     }
-    if (!ui.dirty) {
+    if (!ui.dirty && !uiAnimating()) {
       vTaskDelay(pdMS_TO_TICKS(20));
       continue;
     }
@@ -78,15 +108,18 @@ void DisplayTask(void *pv) {  // ENDAST FÖR RENDERING
         vTaskDelay(pdMS_TO_TICKS(50));
         continue;
       }
+      FRAME_PROFILE_BEGIN();
       beginFrame();
       renderMainFromArray(ui.scrollOffset);
       xSemaphoreGive(gDeparturesMutex);
       endFrame();
+      FRAME_PROFILE_END("departures");
       ui.dirty = false;
-      vTaskDelay(pdMS_TO_TICKS(50));
+      vTaskDelay(pdMS_TO_TICKS(uiAnimating() ? UI_FRAME_MS : 50));
       continue;
     }
 
+    FRAME_PROFILE_BEGIN();
     beginFrame();
 
     switch (ui.state) {
@@ -109,9 +142,10 @@ void DisplayTask(void *pv) {  // ENDAST FÖR RENDERING
         break;
     }
     endFrame();
+    FRAME_PROFILE_END("menu");
     ui.dirty = false;
 
-    vTaskDelay(pdMS_TO_TICKS(50));
+    vTaskDelay(pdMS_TO_TICKS(uiAnimating() ? UI_FRAME_MS : 50));
   }
 }
 
@@ -164,6 +198,7 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
           if (press == PRESS_SHORT) {   // öppna karusellen
             ui.state = STATE_MENU;
             ui.selectedIndex = 0;
+            ui_carouselReset();
             ui.dirty = true;
           }
           if (press == PRESS_LONG) {   // genväg till QR-koden
@@ -183,8 +218,18 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
             ui.dirty = true;
           }
 
-          if (next && ui.scrollOffset < maxOffset) { ui.scrollOffset++; ui.dirty = true; }
-          if (prev && ui.scrollOffset > 0)         { ui.scrollOffset--; ui.dirty = true; }
+          // Innehållet flyttas Y_OFFSET px när scrollOffset ändras; rörelsen
+          // startar där bilden nyss stod och ebbar ut mot noll.
+          if (next && ui.scrollOffset < maxOffset) {
+            ui.scrollOffset++;
+            ui_animNudge(&ui.scrollAnim, +Y_OFFSET, Y_OFFSET);
+            ui.dirty = true;
+          }
+          if (prev && ui.scrollOffset > 0) {
+            ui.scrollOffset--;
+            ui_animNudge(&ui.scrollAnim, -Y_OFFSET, Y_OFFSET);
+            ui.dirty = true;
+          }
 
           if (g_dataUpdated) {
             g_dataUpdated = false;
@@ -209,8 +254,8 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
 
       case STATE_MENU:
         {
-          if (prev) { ui.selectedIndex--; mainMenuWrap(); ui.dirty = true; }
-          if (next) { ui.selectedIndex++; mainMenuWrap(); ui.dirty = true; }
+          if (prev) { mainMenuStep(-1); ui.dirty = true; }
+          if (next) { mainMenuStep(+1); ui.dirty = true; }
 
           if (press == PRESS_LONG) {   // tillbaka till hemskärmen
             ui.state = STATE_DEPARTURES;
