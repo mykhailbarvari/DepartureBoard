@@ -5,6 +5,7 @@
 #include <input.h>
 #include <config.h>
 #include <settings.h>
+#include <portal.h>
 #include <time.h>
 #include "esp_sleep.h"
 #include "esp_wifi.h"
@@ -20,12 +21,13 @@ TaskHandle_t hInput = NULL;
 TaskHandle_t hDisplay = NULL;
 TaskHandle_t hLogic = NULL;
 TaskHandle_t hApi = NULL;
+TaskHandle_t hPortal = NULL;
 
 SemaphoreHandle_t gDeparturesMutex;
 
 // Väcker ApiTask direkt istället för att vänta ut hämtningsintervallet.
 // Används när användaren gör något som bör ge färsk data omedelbart.
-static void requestFetch(void) {
+void requestFetch(void) {
   if (hApi) xTaskNotifyGive(hApi);
 }
 
@@ -145,7 +147,11 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
           // logotypen synas åtminstone BOOT_MIN_MS.
           if (elapsed >= BOOT_MS || (dataReady && elapsed >= BOOT_MIN_MS)) {
             ui.bootStartMs = 0;
-            ui.state = STATE_DEPARTURES;
+            // Oprovisionerad enhet: visa anslutnings-QR:en direkt. Det finns
+            // inga avgangar att visa anda, och anvandaren behover inte veta
+            // nagot i forvag for att komma igang.
+            ui.state = portal_isAp() ? STATE_QR : STATE_DEPARTURES;
+            ui.returnTo = STATE_DEPARTURES;
             ui.scrollOffset = 0;
             g_dataUpdated = false;
             ui.dirty = true;
@@ -160,7 +166,11 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
             ui.selectedIndex = 0;
             ui.dirty = true;
           }
-          // PRESS_LONG: reserverad för QR-koden, se fas 4.
+          if (press == PRESS_LONG) {   // genväg till QR-koden
+            ui.returnTo = STATE_DEPARTURES;
+            ui.state = STATE_QR;
+            ui.dirty = true;
+          }
 
           // Radkapaciteten varierar: statusraden stjäl en rad när den visas.
           const int filteredCount = departures_visibleCount();
@@ -228,6 +238,7 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
                 break;
 
               case 3:
+                ui.returnTo = STATE_MENU;
                 ui.state = STATE_QR;
                 break;
 
@@ -294,7 +305,9 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
       case STATE_QR:
         {
           if (press != PRESS_NONE) {
-            ui.state = STATE_MENU;
+            // Tillbaka dit man kom ifrån: hemskärmen vid långtryck där,
+            // annars karusellen.
+            ui.state = (ui.returnTo == STATE_DEPARTURES) ? STATE_DEPARTURES : STATE_MENU;
             ui.selectedIndex = 3;
             ui.dirty = true;
             break;
@@ -435,10 +448,22 @@ void setup() {
 
   gDeparturesMutex = xSemaphoreCreateMutex(); // API MUTEX
 
+  // Portalen startar SoftAP + captive portal om enheten saknar WiFi-uppgifter.
+  // Håll inne encoderns knapp under uppstart för att tvinga fram AP-läget —
+  // annars finns ingen väg tillbaka till provisioneringen på en tavla som
+  // redan har sparade uppgifter.
+  input_update();
+  const bool forceAp = input_select();
+  if (forceAp) Serial.println("[portal] AP-lage framtvingat");
+  portal_begin(forceAp);
+
   xTaskCreate(InputTask, "Input", 4096, NULL, 3, &hInput);
   xTaskCreate(DisplayTask, "Display", 8192, NULL, 4, &hDisplay);
   xTaskCreate(ControlLogicTask, "Logic", 4096, NULL, 2, &hLogic);
   xTaskCreate(ApiTask, "API", 8192, NULL, 1, &hApi);
+
+  // Lagst prioritet: webbservern far aldrig konkurrera med renderingen.
+  xTaskCreate(portal_task, "Portal", 8192, NULL, 1, &hPortal);
 }
 
 // Main-loop

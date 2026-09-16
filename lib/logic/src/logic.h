@@ -95,6 +95,7 @@ typedef struct {
   uint32_t bootStartMs;
   int8_t bouncePixels;
   uint32_t bounceStartMs;
+  AppState returnTo;   // dit "tillbaka" leder från skärmar som nås flera vägar
 } UiState;
 
 extern UiState ui;

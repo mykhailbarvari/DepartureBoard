@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include <time.h>
 #include <config.h>
+#include <settings.h>
+#include <portal.h>
 #include <WiFiClientSecure.h>
 
 #include <freertos/FreeRTOS.h>
@@ -35,9 +37,11 @@ static bool ntpSynced = false;
 
 static bool ensureWiFi() {
   if (WiFi.status() == WL_CONNECTED) return true;
+  if (portal_isAp()) return false;         // SoftAP aktiv: rör inte radion
+  if (!settings_hasWifi()) return false;   // oprovisionerad: portalen tar över
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  WiFi.begin(g_settings.wifiSsid, g_settings.wifiPass);
 
   unsigned long t0 = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - t0 < 8000) {
@@ -138,10 +142,21 @@ FetchResult api_fetch_departures(int siteId) {
   HTTPClient http;
   http.setTimeout(5000);
 
-  char url[192];
-  snprintf(url, sizeof(url),
-           "https://transport.integration.sl.se/v1/sites/%d/departures?transport=BUS",
-           siteId);
+  // Trafikslag kommer från inställningarna. Tom parameter = alla trafikslag,
+  // och då ska den utelämnas helt istället för att skickas tom.
+  char transport[48];
+  settings_transportParam(transport, sizeof(transport));
+
+  char url[224];
+  if (transport[0]) {
+    snprintf(url, sizeof(url),
+             "https://transport.integration.sl.se/v1/sites/%d/departures?transport=%s",
+             siteId, transport);
+  } else {
+    snprintf(url, sizeof(url),
+             "https://transport.integration.sl.se/v1/sites/%d/departures",
+             siteId);
+  }
 
   if (!http.begin(client, url)) {
     g_lastFetchResult = FETCH_HTTP_ERR;

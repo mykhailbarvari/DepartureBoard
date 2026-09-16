@@ -26,6 +26,10 @@ FetchResult api_fetch_departures(int siteId);
 
 const char* api_fetchResultName(FetchResult r);
 
+// Vacker ApiTask direkt istallet for att vanta ut intervallet.
+// Anropas nar en installning andrats (fran UI:t eller webbportalen).
+void requestFetch(void);
+
 // Senaste utfall + millis() vid senaste lyckade svar (0 = aldrig lyckats).
 // Lases av UI:t for att kunna visa "uppdaterad X min sedan".
 extern volatile FetchResult g_lastFetchResult;

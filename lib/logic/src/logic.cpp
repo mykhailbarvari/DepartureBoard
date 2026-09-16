@@ -12,6 +12,8 @@
 #include <WiFi.h>
 #include <ui_carousel.h>
 #include <ui_icons.h>
+#include <ui_qr.h>
+#include <portal.h>
 
 
 Departure departures[MAX_DEPARTURES];
@@ -155,7 +157,14 @@ static void drawCentered(int y, const char* msg, uint16_t color) {
 static void renderEmptyState(void) {
   switch (g_lastFetchResult) {
     case FETCH_NO_WIFI:
-      drawCentered(26, "Ingen WiFi", COLOR_ERROR);
+      if (portal_isAp()) {
+        // Oprovisionerad: visa anslutnings-QR:en istället för ett
+        // felmeddelande användaren inte kan göra något åt.
+        renderQR();
+      } else {
+        drawCentered(20, "Ingen WiFi", COLOR_ERROR);
+        drawCentered(36, "Hall inne for QR", COLOR_GRAY_50);
+      }
       return;
 
     case FETCH_HTTP_ERR:
@@ -372,24 +381,57 @@ void renderColourwayMenu(void) {
 
 // ------------------------------------------------------------------- NÄTVERK
 
-// Fas 4 ritar en QR-kod här; tills dess visas uppgifterna som text.
+// QR-koden till webbportalen.
+//
+// I AP-läge är koden en WIFI:-sträng, så att skanna den ANSLUTER telefonen
+// till enhetens nät direkt — varpå captive portal öppnar konfigurationssidan
+// av sig själv. Användaren behöver inte veta någonting i förväg.
+//
+// I STA-läge är den en URL till enhetens LAN-adress. Versaler med flit:
+// det gör att QR:en kodas i alfanumeriskt läge och ryms i version 1 (21x21),
+// vilket ger 2 px per modul på 64 px höjd istället för 1. URL:ers schema och
+// värdnamn är skiftlägesokänsliga, så telefonen bryr sig inte.
 void renderQR(void) {
-  drawTitle("Nätverk");
+  char payload[64];
+  bool drawn;
 
-  if (WiFi.status() == WL_CONNECTED) {
-    char buf[40];
+  if (portal_isAp()) {
+    // 31 tecken — ryms precis i version 2 (32 byte i byte-läge). Håll
+    // AP-namnet kort om strängen ändras.
+    snprintf(payload, sizeof(payload), "WIFI:T:nopass;S:%s;;", portal_apSsid());
+    drawn = ui_drawQR(payload, 31, 3, 58);
 
-    fitTextToWidthPx(buf, sizeof(buf), WiFi.SSID().c_str(), 124);
-    drawString(2, 18, buf, COLOR_GRAY_90);
-
-    snprintf(buf, sizeof(buf), "%s", WiFi.localIP().toString().c_str());
-    drawString(2, 32, buf, COLOR_WHITE);
-
-    snprintf(buf, sizeof(buf), "%d dBm", (int)WiFi.RSSI());
-    drawString(2, 46, buf, COLOR_GRAY_50);
-  } else {
-    drawString(2, 26, "Ej ansluten", COLOR_ERROR);
+    drawString(64, 4,  "Skanna", g_settings.colourway);
+    drawString(64, 18, "for att", COLOR_GRAY_90);
+    drawString(64, 32, "ansluta", COLOR_GRAY_90);
+    if (!drawn) drawString(64, 46, "QR fel", COLOR_ERROR);
+    return;
   }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    drawTitle("Nätverk");
+    drawString(2, 26, "Ansluter...", COLOR_WARNING);
+    return;
+  }
+
+  const String ip = WiFi.localIP().toString();
+
+  snprintf(payload, sizeof(payload), "HTTP://%s", ip.c_str());
+  drawn = ui_drawQR(payload, 31, 3, 58);
+
+  char buf[40];
+
+  fitTextToWidthPx(buf, sizeof(buf), WiFi.SSID().c_str(), 62);
+  drawString(64, 4, buf, COLOR_GRAY_90);
+
+  fitTextToWidthPx(buf, sizeof(buf), ip.c_str(), 62);
+  drawString(64, 18, buf, COLOR_WHITE);
+
+  snprintf(buf, sizeof(buf), "%d dBm", (int)WiFi.RSSI());
+  drawString(64, 32, buf, COLOR_GRAY_50);
+
+  if (drawn) drawString(64, 46, "Skanna", g_settings.colourway);
+  else       drawString(64, 46, "QR fel", COLOR_ERROR);
 }
 
 // -------------------------------------------------------------------- SYSTEM
