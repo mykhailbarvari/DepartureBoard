@@ -4,11 +4,17 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <font.h>
+#include <Preferences.h>
 
 volatile uint8_t displayBrightness = DEFAULT_BRIGHTNESS;  // Brightness
 
+static Preferences s_prefs;
+
 // Definierar en tom pekare för panelen. Används för tillgång till HUB75E Library
 static MatrixPanel_I2S_DMA* display = nullptr;
+
+static uint8_t  g_curBrightness = 0;
+static uint32_t g_lastFadeMs    = 0;
 
 // Clip States - Definierar maximalt antal pixlar i X-led en given sträng kan anta
 static bool g_clipXEnabled = false;
@@ -31,8 +37,14 @@ void clearClipX(void) {
 // Funktion för Start-Initiering
 void display_init(void) {
 
+  // Ladda sparad brightness
+  s_prefs.begin("board", true);  // read-only
+  displayBrightness = s_prefs.getUChar("brightness", DEFAULT_BRIGHTNESS);
+  s_prefs.end();
+
   // Panel Initiering (Upplösning/Kedja)
   HUB75_I2S_CFG mxconfig(PANEL_RES_X, PANEL_RES_Y, PANEL_CHAIN);
+  mxconfig.double_buff = true;
 
   // Initiering av våra PINS
   HUB75_I2S_CFG::i2s_pins _pins = { PIN_R1, PIN_G1, PIN_B1, PIN_R2, PIN_G2, PIN_B2, PIN_A, PIN_B, PIN_C, PIN_D, PIN_E, PIN_LAT, PIN_OE, PIN_CLK };
@@ -40,9 +52,10 @@ void display_init(void) {
 
   // Initiering av "display" pekare. Använd "display->" för anrop av befintliga library funktioner
   display = new MatrixPanel_I2S_DMA(mxconfig);
-  display->begin();           // Aktivera Panel
-  display->clearScreen();     // Rensa tidigare DMA Buffer (Gammal data kan finnas kvar efter omstart)
-  display->setBrightness(displayBrightness); // Initiera Ljusstyrka
+  display->begin();
+  display->clearScreen();
+  display->setBrightness(displayBrightness);
+  g_curBrightness = displayBrightness;  // Synka fade-state så ingen onödig fade-in sker
 }
 
 // Funktion som rensar panel
@@ -51,12 +64,11 @@ void clearScreen(void) {
 }
 
 
-// FADE DISPLAY 
-
-static uint8_t g_curBrightness = 0;
-static uint32_t g_lastFadeMs = 0;
+// FADE DISPLAY
 
 static void updateBrightness(uint8_t target) {
+  if (g_curBrightness == target) return;  // Redan på rätt nivå, gör ingenting
+
   const uint8_t STEP = 1;
   const uint32_t MS = 10;
 
@@ -448,6 +460,39 @@ void drawTextRightAlignedInBox(int xmin, int xmax, int y, const char* text, uint
 // - bit = 0  => rita inget (transparent)
 //
 // bitmap-data antas vara packad radvis, MSB först per byte (0x80..0x01).
+void display_fillRect(int x, int y, int w, int h, uint16_t color) {
+  display->fillRect(x, y, w, h, color);
+}
+
+void display_drawRectOutline(int x, int y, int w, int h, uint16_t color) {
+  display->drawRect(x, y, w, h, color);
+}
+
+void display_setBrightness(uint8_t val) {
+  displayBrightness = val;
+}
+
+uint8_t display_getBrightness(void) {
+  return displayBrightness;
+}
+
+void display_saveBrightness(void) {
+  s_prefs.begin("board", false);  // read-write
+  s_prefs.putUChar("brightness", displayBrightness);
+  s_prefs.end();
+}
+
+void display_stopDMA(void) {
+  // Blank the panel immediately (bypasses fade) before entering sleep
+  g_curBrightness = 0;
+  if (display) display->setBrightness(0);
+}
+
+void display_resumeDMA(void) {
+  // DMA kept running during light sleep — display_on() will fade back in
+  (void)0;
+}
+
 void drawBitmapMask(const uint8_t* bitmap, int w, int h, int xOff, int yOff, uint16_t color) {
   const int bytesPerRow = (w + 7) / 8; // säkert även om w ej är delbart med 8
 

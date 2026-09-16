@@ -4,6 +4,7 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <string.h>
+#include <time.h>
 #include <config.h>
 #include <WiFiClientSecure.h>
 
@@ -13,6 +14,8 @@
 extern SemaphoreHandle_t gDeparturesMutex;
 
 // WiFi Inställningar och Initiering
+static bool ntpSynced = false;
+
 static bool ensureWiFi() {
   if (WiFi.status() == WL_CONNECTED) return true;
   WiFi.mode(WIFI_STA);
@@ -20,19 +23,30 @@ static bool ensureWiFi() {
 
   unsigned long t0 = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - t0 < 8000) {
-    delay(100); // OK i ApiTask, men kan bytas till vTaskDelay om du vill
+    delay(100);
   }
-  return (WiFi.status() == WL_CONNECTED);
+  if (WiFi.status() != WL_CONNECTED) return false;
+
+  if (!ntpSynced) {
+    configTime(0, 0, "pool.ntp.org");
+    setenv("TZ", "CET-1CEST,M3.5.0,M10.5.0/3", 1);
+    tzset();
+    // Vänta tills NTP svarar (max 3s)
+    unsigned long t1 = millis();
+    while (time(nullptr) < 1000000UL && millis() - t1 < 3000) delay(100);
+    ntpSynced = (time(nullptr) > 1000000UL);
+  }
+  return true;
 }
 
-bool api_fetch_departures(int siteId) {
+bool api_fetch_departures(int siteId, int directionCode) {
   if (!ensureWiFi()) return false;
 
   WiFiClientSecure client;
   client.setInsecure();
 
   HTTPClient http;
-  http.setTimeout(5000); // bra att ha, annars kan den hänga länge
+  http.setTimeout(5000);
 
   char url[192];
   snprintf(url, sizeof(url),
@@ -47,11 +61,17 @@ bool api_fetch_departures(int siteId) {
     return false;
   }
 
-  String payload = http.getString();
-  http.end();
+  JsonDocument filter;
+  filter["departures"][0]["line"]["designation"] = true;
+  filter["departures"][0]["destination"] = true;
+  filter["departures"][0]["display"] = true;
+  filter["departures"][0]["direction_code"] = true;
+  filter["departures"][0]["expected"] = true;
 
-  DynamicJsonDocument doc(96 * 1024);
-  DeserializationError err = deserializeJson(doc, payload);
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, *http.getStreamPtr(),
+                                             DeserializationOption::Filter(filter));
+  http.end();
   if (err) return false;
 
   JsonArray deps = doc["departures"].as<JsonArray>();
@@ -66,11 +86,15 @@ bool api_fetch_departures(int siteId) {
   for (JsonObject d : deps) {
     if (tempCount >= MAX_DEPARTURES) break;
 
-    const char* line = d["line"]["designation"] | "";
-    const char* dest = d["destination"] | "";
-    const char* disp = d["display"] | "";
+    const char* line     = d["line"]["designation"] | "";
+    const char* dest     = d["destination"] | "";
+    const char* disp     = d["display"] | "";
+    const char* expected = d["expected"] | "";
 
     if (!line[0] || !dest[0] || !disp[0]) continue;
+
+    int dir = d["direction_code"] | 0;
+    if (directionCode != 0 && dir != directionCode) continue;
 
     Departure* out = &temp[tempCount];
 
@@ -83,22 +107,63 @@ bool api_fetch_departures(int siteId) {
     strncpy(out->display, disp, sizeof(out->display) - 1);
     out->display[sizeof(out->display) - 1] = '\0';
 
+    // Extrahera HH:MM från expected + beräkna minsUntil via NTP
+    const char* tPtr = strchr(expected, 'T');
+    if (tPtr && strlen(tPtr) >= 6) {
+      snprintf(out->depTime, sizeof(out->depTime), "%.5s", tPtr + 1);
+    } else {
+      out->depTime[0] = '\0';
+    }
+
+    out->minsUntil = 0;
+    if (tPtr) {
+      struct tm tmDep = {0};
+      int y, mo, d, h, mi, s;
+      if (sscanf(expected, "%4d-%2d-%2dT%2d:%2d:%2d", &y, &mo, &d, &h, &mi, &s) == 6) {
+        tmDep.tm_year = y - 1900;
+        tmDep.tm_mon  = mo - 1;
+        tmDep.tm_mday = d;
+        tmDep.tm_hour = h;
+        tmDep.tm_min  = mi;
+        tmDep.tm_sec  = s;
+        tmDep.tm_isdst = -1;
+        time_t depEpoch = mktime(&tmDep);
+        time_t nowEpoch = time(nullptr);
+        if (nowEpoch > 1000000UL && depEpoch > nowEpoch) {
+          out->minsUntil = (uint16_t)((depEpoch - nowEpoch) / 60);
+        }
+      }
+    }
+    // Fallback om NTP ej synkat
+    if (out->minsUntil == 0) {
+      out->minsUntil = strchr(disp, ':') ? 999 : (uint16_t)atoi(disp);
+    }
+
     tempCount++;
   }
 
   if (tempCount <= 0) return false;
 
   // =========================
-  // 2) COMMIT till render-data
+  // 2) Committa alltid, men kolla om något faktiskt ändrades
   // =========================
   if (gDeparturesMutex) xSemaphoreTake(gDeparturesMutex, portMAX_DELAY);
 
-  // Kopiera hela blocket på en gång (snabbt, “atomiskt nog”)
+  bool changed = (tempCount != departureCount);
+  if (!changed) {
+    for (int i = 0; i < tempCount && !changed; i++) {
+      if (strcmp(temp[i].display,     departures[i].display)     != 0 ||
+          strcmp(temp[i].line,        departures[i].line)        != 0 ||
+          strcmp(temp[i].destination, departures[i].destination) != 0) {
+        changed = true;
+      }
+    }
+  }
+
   memcpy(departures, temp, sizeof(Departure) * tempCount);
   departureCount = tempCount;
 
   if (gDeparturesMutex) xSemaphoreGive(gDeparturesMutex);
 
-  Serial.printf("API-FETCH ok (%d)\n", departureCount);
-  return true;
+  return changed;  // true = data ändrades, false = identisk data (skippa re-render)
 }

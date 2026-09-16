@@ -6,5 +6,5 @@
 
 extern SemaphoreHandle_t gDeparturesMutex;
 
-bool api_fetch_departures(int siteId);
+bool api_fetch_departures(int siteId, int directionCode);
 

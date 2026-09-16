@@ -70,6 +70,13 @@ void display_off(void);
 void fitTextToWidthPx(char* out, size_t outCap, const char* in, int maxPx);
 void lineCode3Digits(char* out, size_t outCap, const char* in);
 void drawBitmapMask(const uint8_t* bitmap, int w, int h, int xOff, int yOff, uint16_t color);
+void display_fillRect(int x, int y, int w, int h, uint16_t color);
+void display_drawRectOutline(int x, int y, int w, int h, uint16_t color);
+void display_setBrightness(uint8_t val);
+uint8_t display_getBrightness(void);
+void display_saveBrightness(void);
+void display_stopDMA(void);
+void display_resumeDMA(void);
 
 
 
