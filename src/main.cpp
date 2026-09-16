@@ -57,6 +57,8 @@ static bool uiAnimating(void) {
   switch (ui.state) {
     case STATE_MENU:       return ui_carouselAnimating();
     case STATE_DEPARTURES: return ui_animActive(&ui.scrollAnim);
+    case STATE_COLOURWAY:  return ui_animActive(&ui.scrollAnim) ||
+                                  ui_animActive(&ui.selectAnim);
     default:               return false;
   }
 }
@@ -278,17 +280,10 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
                 ui.state = STATE_BRIGHTNESS;
                 break;
 
-              case 2: {
-                // Börja på det tema som är valt just nu.
+              case 2:
                 ui.state = STATE_COLOURWAY;
-                int idx = 0;
-                for (int i = 0; i < kThemeCount; i++) {
-                  if (kThemes[i].colour == g_settings.colourway) { idx = i; break; }
-                }
-                ui.selectedIndex = idx;
-                ui.scrollOffset  = 0;
+                themeMenuOpen(g_settings.colourway);
                 break;
-              }
 
               case 3:  // TILLFÄLLIG post, se kMenuItems
                 ui.state = STATE_STATION;
@@ -336,9 +331,9 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
 
       case STATE_COLOURWAY:
         {
-          // Renderaren klampar scrollen mot de fyra synliga raderna.
-          if (prev && ui.selectedIndex > 0)                { ui.selectedIndex--; ui.dirty = true; }
-          if (next && ui.selectedIndex < kThemeCount - 1)  { ui.selectedIndex++; ui.dirty = true; }
+          // themeMenuStep() klampar och startar rätt glidning.
+          if (prev) { themeMenuStep(-1); ui.dirty = true; }
+          if (next) { themeMenuStep(+1); ui.dirty = true; }
 
           if (press == PRESS_LONG) {   // ångra utan att spara
             ui.state = STATE_MENU;
@@ -349,9 +344,7 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
           }
 
           if (press == PRESS_SHORT) {
-            if (ui.selectedIndex >= 0 && ui.selectedIndex < kThemeCount) {
-              g_settings.colourway = kThemes[ui.selectedIndex].colour;
-            }
+            g_settings.colourway = themeMenuColour();
             settings_save();
             ui.state = STATE_MENU;
             ui.selectedIndex = 2;

@@ -86,6 +86,12 @@ typedef struct {
 extern const Theme kThemes[];
 extern const int   kThemeCount;
 
+// Temamenyn. Klampning och animationsstart ligger här och inte i renderaren:
+// renderaren körs varje bildruta och skulle starta om rörelsen i all oändlighet.
+void     themeMenuOpen(uint16_t currentColour);
+void     themeMenuStep(int delta);
+uint16_t themeMenuColour(void);
+
 // Globalt Deklarerade Structs
 typedef enum {
   STATE_BOOT,
@@ -105,7 +111,8 @@ typedef struct {
   int scrollOffset;
   bool dirty;
   uint32_t bootStartMs;
-  UiAnim   scrollAnim;  // avgångslistans glidande scroll
+  UiAnim   scrollAnim;  // listornas glidande scroll (avgångar och teman)
+  UiAnim   selectAnim;  // markeringens glidning i temamenyn
   AppState returnTo;    // dit "tillbaka" leder från skärmar som nås flera vägar
 } UiState;
 

@@ -330,6 +330,62 @@ const Theme kThemes[] = {
 };
 const int kThemeCount = (int)(sizeof(kThemes) / sizeof(kThemes[0]));
 
+// Temamenyns layout. Behövs både av renderaren och av stegningen nedan, så den
+// bor på filnivå. Fonten är 12 px och skärmen 64, så fyra rader ryms under
+// rubriken.
+#define THEME_VISIBLE 4
+#define THEME_ROW_H   12
+#define THEME_TOP     14   // 2 px luft under rubriken
+
+// Markeringens rad räknat från fönstrets överkant.
+static int themeScreenRow(void) {
+  return ui.selectedIndex - ui.scrollOffset;
+}
+
+void themeMenuOpen(uint16_t currentColour) {
+  int idx = 0;
+  for (int i = 0; i < kThemeCount; i++) {
+    if (kThemes[i].colour == currentColour) { idx = i; break; }
+  }
+
+  ui.selectedIndex = idx;
+  ui.scrollOffset  = 0;
+  listClamp(kThemeCount, THEME_VISIBLE);
+
+  ui_animReset(&ui.scrollAnim);
+  ui_animReset(&ui.selectAnim);
+}
+
+// Ett steg flyttar ANTINGEN markeringen inuti fönstret ELLER hela fönstret —
+// aldrig båda. Därför startas exakt en av de två rörelserna per vridning.
+void themeMenuStep(int delta) {
+  if (delta == 0) return;
+
+  const int beforeRow    = themeScreenRow();
+  const int beforeScroll = ui.scrollOffset;
+
+  ui.selectedIndex += delta;
+  listClamp(kThemeCount, THEME_VISIBLE);
+
+  const int rowDelta    = themeScreenRow() - beforeRow;
+  const int scrollDelta = ui.scrollOffset - beforeScroll;
+
+  if (scrollDelta != 0) {
+    // Fönstret flyttade sig: innehållet ska glida, markeringen åker med sin rad.
+    ui_animNudge(&ui.scrollAnim, scrollDelta * THEME_ROW_H, THEME_ROW_H);
+  } else if (rowDelta != 0) {
+    // Markeringen bytte rad inuti fönstret.
+    ui_animNudge(&ui.selectAnim, rowDelta * THEME_ROW_H, THEME_ROW_H);
+  }
+}
+
+uint16_t themeMenuColour(void) {
+  if (ui.selectedIndex < 0 || ui.selectedIndex >= kThemeCount) {
+    return g_settings.colourway;
+  }
+  return kThemes[ui.selectedIndex].colour;
+}
+
 void renderMainMenu(void) {
   ui_renderCarousel(kMenuItems, kMenuItemCount, ui.selectedIndex, g_settings.colourway);
 }
@@ -378,27 +434,40 @@ void renderBrightness(void) {
 // ------------------------------------------------------------------ FÄRGTEMA
 
 void renderColourwayMenu(void) {
-  drawTitle("Färgtema");
+  ui_animUpdate(&ui.scrollAnim);
+  ui_animUpdate(&ui.selectAnim);
 
-  // Fonten är 12 px och skärmen 64, så bara fyra rader ryms under rubriken.
-  const int VISIBLE = 4;
-  const int ROW_H   = 12;
-  const int TOP     = 14;   // 2 px luft under rubriken
+  const int listSlide   = (int)ui.scrollAnim.current;
+  const int selectSlide = (int)ui.selectAnim.current;
 
-  listClamp(kThemeCount, VISIBLE);
+  // Under en glidning behövs en extra rad i var ände, annars uppstår ett tomt
+  // band där innehållet kommit ifrån respektive är på väg.
+  const int extra = (listSlide != 0) ? 1 : 0;
 
-  for (int row = 0; row < VISIBLE; row++) {
+  for (int row = -extra; row < THEME_VISIBLE + extra; row++) {
     const int i = ui.scrollOffset + row;
-    if (i >= kThemeCount) break;
+    if (i < 0 || i >= kThemeCount) continue;
 
-    const int  y   = TOP + row * ROW_H;
+    const int  y   = THEME_TOP + row * THEME_ROW_H + listSlide;
     const bool sel = (ui.selectedIndex == i);
 
-    if (sel) display_fillRect(3, y + 3, 4, 4, kThemes[i].colour);
     display_fillRect(11, y + 2, 6, 6, kThemes[i].colour);
     drawString(22, y, kThemes[i].name, sel ? kThemes[i].colour : COLOR_GRAY_50);
   }
+
+  // Markeringen är pinnad mot fönstret och får därför INTE listSlide: när
+  // listan scrollar står den still och raderna glider under den, som i vilken
+  // scrollande meny som helst. Bara selectSlide rör den, alltså när den byter
+  // rad inuti fönstret.
+  const int selY = THEME_TOP + themeScreenRow() * THEME_ROW_H + selectSlide;
+  display_fillRect(3, selY + 3, 4, 4, themeMenuColour());
+
+  // Rubriken ritas SIST med egen svart botten: biblioteket klipper bara i
+  // x-led, så en rad som glider uppåt ritar annars rakt in i den här ytan.
+  display_fillRect(0, 0, 128, THEME_TOP, COLOR_BLACK);
+  drawTitle("Färgtema");
 }
+
 
 // ------------------------------------------------------------------- NÄTVERK
 
