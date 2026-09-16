@@ -16,6 +16,7 @@ static WebServer  server(80);
 static DNSServer  dns;
 
 static bool s_apMode = false;
+static bool s_serverStarted = false;
 static char s_apSsid[24] = {0};
 
 // Kort SSID med flit: WiFi-join-QR:en blir "WIFI:T:nopass;S:<ssid>;;" och
@@ -134,6 +135,11 @@ static void handlePostWifi(void) {
     WiFi.softAPdisconnect(true);
     s_apMode = false;
     WiFi.mode(WIFI_STA);
+
+    // Sockeln hörde till AP-gränssnittet som just försvann. Låt
+    // startServerOnce() binda om när STA-anslutningen är uppe.
+    server.stop();
+    s_serverStarted = false;
   }
   WiFi.begin(g_settings.wifiSsid, g_settings.wifiPass);
   requestFetch();
@@ -162,6 +168,19 @@ static void handleNotFound(void) {
 
 // -------------------------------------------------------------------- UPPSTART
 
+// server.begin() skapar en lyssnande socket och assertar inne i lwIP
+// ("tcpip_send_msg_wait_sem ... Invalid mbox") om den anropas innan
+// nätverksstacken finns. I STA-läge rörs radion först när ApiTask kör sin
+// första hämtning, alltså långt efter setup(). Därför startas servern lazy,
+// när det faktiskt finns ett gränssnitt att lyssna på.
+static void startServerOnce(void) {
+  if (s_serverStarted) return;
+  if (!s_apMode && WiFi.status() != WL_CONNECTED) return;
+
+  server.begin();
+  s_serverStarted = true;
+}
+
 void portal_begin(bool forceAp) {
   if (forceAp || !settings_hasWifi()) {
     buildApSsid();
@@ -179,14 +198,18 @@ void portal_begin(bool forceAp) {
   server.on("/api/status",    HTTP_GET,  handleStatus);
   server.onNotFound(handleNotFound);
 
-  server.begin();
+  // Ingen server.begin() här — se startServerOnce().
 }
 
 void portal_task(void* pv) {
   (void)pv;
   for (;;) {
-    if (s_apMode) dns.processNextRequest();
-    server.handleClient();
+    startServerOnce();
+
+    if (s_serverStarted) {
+      if (s_apMode) dns.processNextRequest();
+      server.handleClient();
+    }
     vTaskDelay(pdMS_TO_TICKS(5));
   }
 }
