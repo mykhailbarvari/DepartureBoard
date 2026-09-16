@@ -1,5 +1,6 @@
 #include "portal.h"
 #include "portal_page.h"
+#include "portal_logo.h"
 
 #include <WiFi.h>
 #include <WebServer.h>
@@ -42,6 +43,13 @@ static void sendJson(int code, const JsonDocument& doc) {
 
 static void handleRoot(void) {
   server.send_P(200, "text/html; charset=utf-8", PORTAL_PAGE);
+}
+
+// Logotypen serveras som egen resurs i stallet for att badda in den i HTML:en.
+// Det haller sidan liten och later webblasaren cacha logotypen for sig.
+static void handleLogo(void) {
+  server.sendHeader("Cache-Control", "public, max-age=604800");
+  server.send_P(200, "image/svg+xml", PORTAL_LOGO_SVG);
 }
 
 static void handleGetSettings(void) {
@@ -202,6 +210,7 @@ void portal_begin(bool forceAp) {
   }
 
   server.on("/",              HTTP_GET,  handleRoot);
+  server.on("/logo.svg",      HTTP_GET,  handleLogo);
   server.on("/api/settings",  HTTP_GET,  handleGetSettings);
   server.on("/api/settings",  HTTP_POST, handlePostSettings);
   server.on("/api/wifi/scan", HTTP_GET,  handleWifiScan);

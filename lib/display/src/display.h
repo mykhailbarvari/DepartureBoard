@@ -70,6 +70,11 @@ void display_off(void);
 void fitTextToWidthPx(char* out, size_t outCap, const char* in, int maxPx);
 void lineCode3Digits(char* out, size_t outCap, const char* in);
 void drawBitmapMask(const uint8_t* bitmap, int w, int h, int xOff, int yOff, uint16_t color);
+
+// 4 bitars alfa, tva pixlar per byte (hog nibble = jamnt x). Skalar färgen per
+// pixel, sa graderade kanter overlever. Anvands av logotypen; ikonerna ritas
+// fortfarande med drawBitmapMask().
+void drawBitmapAlpha(const uint8_t* alpha4, int w, int h, int xOff, int yOff, uint16_t color);
 void display_fillRect(int x, int y, int w, int h, uint16_t color);
 void display_drawRectOutline(int x, int y, int w, int h, uint16_t color);
 void display_setBrightness(uint8_t val);

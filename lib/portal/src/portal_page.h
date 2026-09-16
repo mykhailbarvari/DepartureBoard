@@ -23,7 +23,7 @@ static const char PORTAL_PAGE[] PROGMEM = R"PAGE(<!doctype html>
 body{margin:0;padding:16px;background:var(--bg);color:var(--fg);
  font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
 .wrap{max-width:520px;margin:0 auto}
-h1{font-size:19px;margin:0 0 4px}
+.logo{display:block;width:150px;max-width:55%;height:auto;margin:0 0 10px}
 .sub{color:var(--mut);font-size:13px;margin:0 0 18px}
 section{background:var(--card);border:1px solid var(--line);border-radius:10px;
  padding:14px;margin-bottom:14px}
@@ -54,7 +54,7 @@ button:disabled{opacity:.5;cursor:default}
 .cur{font-size:14px;margin-top:2px}
 </style></head><body><div class="wrap">
 
-<h1>Departure Board</h1>
+<img class="logo" src="/logo.svg" alt="MB Labs">
 <p class="sub" id="status">Laddar...</p>
 
 <section id="wifiCard">

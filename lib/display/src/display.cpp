@@ -486,6 +486,39 @@ void display_resumeDMA(void) {
   (void)0;
 }
 
+// Skalar en RGB565-farg med alfa 0..15. Komponenterna skalas var for sig i
+// sitt eget djup (5/6/5 bitar), annars forskjuts nyansen nar den morknar.
+static uint16_t scaleColour(uint16_t c, uint8_t a) {
+  if (a >= 15) return c;
+  if (a == 0)  return 0;
+
+  uint16_t r = (c >> 11) & 0x1F;
+  uint16_t g = (c >> 5)  & 0x3F;
+  uint16_t b =  c        & 0x1F;
+
+  r = (r * a) / 15;
+  g = (g * a) / 15;
+  b = (b * a) / 15;
+
+  return (uint16_t)((r << 11) | (g << 5) | b);
+}
+
+void drawBitmapAlpha(const uint8_t* alpha4, int w, int h, int xOff, int yOff, uint16_t color) {
+  const int bytesPerRow = (w + 1) / 2;
+
+  for (int y = 0; y < h; y++) {
+    const uint8_t* row = alpha4 + y * bytesPerRow;
+
+    for (int x = 0; x < w; x++) {
+      const uint8_t packed = row[x >> 1];
+      const uint8_t a = (x & 1) ? (packed & 0x0F) : (packed >> 4);
+      if (!a) continue;   // helt genomskinlig: lamna bakgrunden ifred
+
+      display->drawPixel(xOff + x, yOff + y, scaleColour(color, a));
+    }
+  }
+}
+
 void drawBitmapMask(const uint8_t* bitmap, int w, int h, int xOff, int yOff, uint16_t color) {
   const int bytesPerRow = (w + 7) / 8; // säkert även om w ej är delbart med 8
 

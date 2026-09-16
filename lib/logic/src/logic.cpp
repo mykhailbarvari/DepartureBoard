@@ -12,6 +12,7 @@
 #include <WiFi.h>
 #include <ui_carousel.h>
 #include <ui_icons.h>
+#include <ui_logo.h>
 #include <ui_qr.h>
 #include <portal.h>
 
@@ -177,7 +178,7 @@ static void renderEmptyState(void) {
       // Har ännu inte fått något svar — animera medan vi väntar.
       static const char* const dotFrames[] = { "", ".", "..", "..." };
       int frame = (int)(millis() / 400) % 4;
-      const char* label = "Fetching";
+      const char* label = "Hämtar";
       int labelW = measureTextPx(label);
       int x = (128 - labelW) / 2;
       drawString(x,              26, label,             COLOR_GRAY_50);
@@ -287,7 +288,9 @@ void renderMainFromArray(int startIndex) {
 
 
 void renderBoot(void) {
-    drawBitmapMask(loadingscreen2, 128, 64, 0, 0, g_settings.colourway);
+  drawBitmapAlpha(ui_logo, UI_LOGO_W, UI_LOGO_H,
+                  (128 - UI_LOGO_W) / 2, (64 - UI_LOGO_H) / 2,
+                  g_settings.colourway);
 }
 
 // ============================ KARUSELLMENYN ============================
