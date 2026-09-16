@@ -48,8 +48,8 @@
 
 // Bootskärmen: BOOT_MS är taket, men vi lämnar den så fort första
 // hämtningen svarat — dock aldrig före BOOT_MIN_MS, så logotypen hinner ses.
-#define BOOT_MS      2500
-#define BOOT_MIN_MS  800
+#define BOOT_MS      4500
+#define BOOT_MIN_MS  2800
 
 // Inmatning
 #define LONG_PRESS_MS  600   // gräns mellan kort tryck (välj) och långt (tillbaka)

@@ -52,6 +52,7 @@ button:disabled{opacity:.5;cursor:default}
  border-radius:7px;padding:10px;margin-top:10px}
 .ok{color:#7ee08a}.err{color:#ff7b72}
 .cur{font-size:14px;margin-top:2px}
+.dim{opacity:.55;font-weight:400}
 </style></head><body><div class="wrap">
 
 <img class="logo" src="/logo.svg" alt="MB Labs">
@@ -72,7 +73,7 @@ button:disabled{opacity:.5;cursor:default}
 
 <section>
 <h2>Hållplats</h2>
-<p class="cur">Vald: <strong id="curSite">-</strong></p>
+<p class="cur">Vald: <span id="curSite">-</span></p>
 <label for="q">Sök hållplats</label>
 <input id="q" placeholder="t.ex. Gullmarsplan" autocomplete="off">
 <div class="hits" id="hits" hidden></div>
@@ -111,6 +112,9 @@ var MODES = [["BUS","Buss",1],["METRO","Tunnelbana",2],["TRAIN","Pendeltåg",4],
              ["TRAM","Spårvagn",8],["SHIP","Båt",16]];
 
 function $(id){ return document.getElementById(id); }
+// siteName kommer over natet och satts via innerHTML nedan.
+function esc(s){ var d = document.createElement("div");
+  d.textContent = s; return d.innerHTML; }
 function j(u,o){ return fetch(u,o).then(function(r){
   if(!r.ok) throw new Error(r.status); return r.json(); }); }
 
@@ -129,10 +133,11 @@ function load(){
   j("/api/settings").then(function(s){
     S = s;
     // Namnet fylls i av enheten ur avgangssvaret; direkt efter en
-    // hallplatsandring kan det dröja till nasta hamtning.
-    $("curSite").textContent = s.siteName
-      ? s.siteName + " (" + s.siteId + ")"
-      : "hallplats " + s.siteId;
+    // hallplatsandring kan det droja till nasta hamtning.
+    var idTag = '<span class="dim">(ID=' + (+s.siteId) + ')</span>';
+    $("curSite").innerHTML = s.siteName
+      ? "<strong>" + esc(s.siteName) + "</strong> " + idTag
+      : idTag;
     $("dir").value = s.directionCode;
     $("walk").value = s.walkMinutes;
     $("bri").value = s.brightness;
