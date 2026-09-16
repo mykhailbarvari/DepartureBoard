@@ -7,8 +7,8 @@ bara kommandona M m c l z. Det gor den fullt hanterbar att rastrera har, i
 samma anda som gen_icons.py: ren Python som skriver en packad C-array, inga
 nya byggberoenden.
 
-Varfor alfa och inte 1 bit: logotypen ar 122x64 px pa panelen och bestar till
-stor del av diagonaler. Utan graderade kanter trappar de sonder.
+Varfor alfa och inte 1 bit: logotypen ar knappt 100 px bred pa panelen och
+bestar till stor del av diagonaler. Utan graderade kanter trappar de sonder.
 
 Kor fran projektroten:  python tools/gen_logo.py
 """
@@ -23,6 +23,7 @@ WEB_OUT  = "lib/portal/src/portal_logo.h"
 WEB_FILL = "#e8eaed"
 
 PANEL_W, PANEL_H = 128, 64
+LOGO_SCALE = 0.8            # andel av panelen logotypen far uppta
 SS = 4                      # overprovtagning per axel -> 16 sampel per pixel
 FLATTEN = 12                # linjesegment per kubisk bezier
 
@@ -121,8 +122,10 @@ def rasterise(polys):
     ys = [p[1] for s in polys for p in s]
     x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
 
-    # Passa in i panelen med bevarat forhallande.
-    scale = min(PANEL_W / (x1 - x0), PANEL_H / (y1 - y0))
+    # Passa in i panelen med bevarat forhallande, nedskalat med LOGO_SCALE.
+    box_w = PANEL_W * LOGO_SCALE
+    box_h = PANEL_H * LOGO_SCALE
+    scale = min(box_w / (x1 - x0), box_h / (y1 - y0))
     w = max(1, int(round((x1 - x0) * scale)))
     h = max(1, int(round((y1 - y0) * scale)))
 

@@ -288,9 +288,11 @@ void renderMainFromArray(int startIndex) {
 
 
 void renderBoot(void) {
+  // Alltid vit, oberoende av färgtema — logotypen är en avsändare, inte
+  // en del av gränssnittets accentfärg.
   drawBitmapAlpha(ui_logo, UI_LOGO_W, UI_LOGO_H,
                   (128 - UI_LOGO_W) / 2, (64 - UI_LOGO_H) / 2,
-                  g_settings.colourway);
+                  COLOR_WHITE);
 }
 
 // ============================ KARUSELLMENYN ============================

@@ -23,8 +23,8 @@ static const char PORTAL_PAGE[] PROGMEM = R"PAGE(<!doctype html>
 body{margin:0;padding:16px;background:var(--bg);color:var(--fg);
  font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
 .wrap{max-width:520px;margin:0 auto}
-.logo{display:block;width:150px;max-width:55%;height:auto;margin:0 0 10px}
-.sub{color:var(--mut);font-size:13px;margin:0 0 18px}
+.logo{display:block;width:110px;max-width:45%;height:auto;margin:0 auto 10px}
+.sub{color:var(--mut);font-size:13px;margin:0 0 18px;text-align:center}
 section{background:var(--card);border:1px solid var(--line);border-radius:10px;
  padding:14px;margin-bottom:14px}
 h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);
@@ -148,7 +148,7 @@ function load(){
       $("status").innerHTML = "Enheten kör sitt eget nätverk. <b>Välj hemnätverk nedan först</b> — hållplatssökning kräver internet.";
       $("wifiNote").innerHTML = '<span class="note">Efter anslutning: återgå till ditt hemnätverk och skanna QR-koden på panelen igen.</span>';
     } else {
-      $("status").innerHTML = 'Ansluten till <b>' + st.ssid + '</b> — ' + st.ip;
+      $("status").innerHTML = 'Ansluten till <b>' + st.ssid + '</b><br>' + st.ip;
       // Nätverket är redan valt. Vill man byta: håll inne encodern under
       // uppstart för att tvinga fram enhetens eget nät igen.
       $("wifiCard").hidden = true;
