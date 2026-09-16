@@ -10,8 +10,14 @@
 // Definierar en tom pekare för panelen. Används för tillgång till HUB75E Library
 static MatrixPanel_I2S_DMA* display = nullptr;
 
-static uint8_t  g_curBrightness = 0;
-static uint32_t g_lastFadeMs    = 0;
+// Toningens tillstånd. Tidsstyrd och inte stegstyrd: med ett fast steg per
+// intervall hänger varaktigheten på hur ljus panelen är inställd på, så samma
+// toning tog 160 ms vid nivå 16 och 2,5 sekunder vid 255.
+static uint8_t  g_fadeFrom   = 0;
+static uint8_t  g_fadeTarget = 0;
+static uint8_t  g_fadeLevel  = 0;
+static uint32_t g_fadeStart  = 0;
+static uint16_t g_fadeMs     = 0;
 
 // Clip States - Definierar maximalt antal pixlar i X-led en given sträng kan anta
 static bool g_clipXEnabled = false;
@@ -50,7 +56,8 @@ void display_init(void) {
   display->begin();
   display->clearScreen();
   display->setBrightness(g_settings.brightness);
-  g_curBrightness = g_settings.brightness;  // Synka fade-state så ingen onödig fade-in sker
+  // Synka toningen så ingen oönskad intoning sker direkt efter uppstart.
+  g_fadeFrom = g_fadeTarget = g_fadeLevel = g_settings.brightness;
 }
 
 // Funktion som rensar panel
@@ -61,38 +68,52 @@ void clearScreen(void) {
 
 // FADE DISPLAY
 
-static void updateBrightness(uint8_t target) {
-  if (g_curBrightness == target) return;  // Redan på rätt nivå, gör ingenting
+void display_fadeTo(uint8_t target, uint16_t ms) {
+  if (target == g_fadeTarget) return;   // redan på väg dit; starta inte om
 
-  const uint8_t STEP = 1;
-  const uint32_t MS = 10;
+  g_fadeFrom   = g_fadeLevel;
+  g_fadeTarget = target;
+  g_fadeStart  = millis();
+  g_fadeMs     = ms;
 
-  if (millis() - g_lastFadeMs < MS) return;
-  g_lastFadeMs = millis();
+  if (ms == 0) {
+    g_fadeLevel = target;
+    if (display) display->setBrightness(g_fadeLevel);
+  }
+}
 
-  if (g_curBrightness < target) {
-    g_curBrightness += STEP;
-    if (g_curBrightness > target)
-      g_curBrightness = target;
-  } else if (g_curBrightness > target) {
-    if (g_curBrightness > STEP)
-      g_curBrightness -= STEP;
-    else
-      g_curBrightness = 0;
+void display_fadeTick(void) {
+  if (g_fadeLevel == g_fadeTarget) return;
+
+  const uint32_t elapsed = millis() - g_fadeStart;
+
+  if (g_fadeMs == 0 || elapsed >= g_fadeMs) {
+    g_fadeLevel = g_fadeTarget;
+  } else {
+    const int32_t span = (int32_t)g_fadeTarget - (int32_t)g_fadeFrom;
+    g_fadeLevel = (uint8_t)((int32_t)g_fadeFrom + span * (int32_t)elapsed / (int32_t)g_fadeMs);
   }
 
-  display->setBrightness(g_curBrightness);
+  if (display) display->setBrightness(g_fadeLevel);
+}
+
+bool display_fadeDone(void) {
+  return g_fadeLevel == g_fadeTarget;
+}
+
+uint8_t display_fadeLevel(void) {
+  return g_fadeLevel;
 }
 
 void display_on(void) {
-  updateBrightness(g_settings.brightness);
+  display_fadeTo(g_settings.brightness, DISPLAY_FADE_MS);
+  display_fadeTick();
 }
 
 void display_off(void) {
-  updateBrightness(0);
+  display_fadeTo(0, DISPLAY_FADE_MS);
+  display_fadeTick();
 }
-
-
 
 void beginFrame(void) {
   // Rensa den buffer vi ritar till (backbuffer)
@@ -465,6 +486,8 @@ void display_drawRectOutline(int x, int y, int w, int h, uint16_t color) {
 
 void display_setBrightness(uint8_t val) {
   g_settings.brightness = val;
+  // Hoppa direkt: i ljusstyrkemenyn ska varje encodersteg synas omedelbart.
+  display_fadeTo(val, 0);
 }
 
 uint8_t display_getBrightness(void) {
@@ -475,16 +498,6 @@ void display_saveBrightness(void) {
   settings_save();
 }
 
-void display_stopDMA(void) {
-  // Blank the panel immediately (bypasses fade) before entering sleep
-  g_curBrightness = 0;
-  if (display) display->setBrightness(0);
-}
-
-void display_resumeDMA(void) {
-  // DMA kept running during light sleep — display_on() will fade back in
-  (void)0;
-}
 
 // Skalar en RGB565-farg med alfa 0..15. Komponenterna skalas var for sig i
 // sitt eget djup (5/6/5 bitar), annars forskjuts nyansen nar den morknar.

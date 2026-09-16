@@ -113,17 +113,20 @@ def icon_wifi():
 
 
 # ----------------------------------------------------------------- AVGANGAR
-def icon_bus():
-    """Buss sedd fran sidan: rutor, midjelist och hjul. Rutorna och listen
-    stansas ur karossen (v=0) i stallet for att ritas ovanpa, sa de blir hal
-    nar ikonen ritas som en 1-bits mask."""
+def icon_train():
+    """Tagvagn fran sidan: rutor, midjelist, tre hjul och en ralslinje.
+    Rutorna och listen stansas ur karossen (v=0) i stallet for att ritas
+    ovanpa - ikonen ar en 1-bits mask, sa pastritat hade bara fyllt igen."""
     g = blank()
-    rrect(g, 3, 3, 18, 15, 3)      # kaross
-    rect(g, 5, 6, 6, 5, 0)         # ruta vanster
-    rect(g, 13, 6, 6, 5, 0)        # ruta hoger
-    rect(g, 5, 13, 14, 2, 0)       # midjelist
-    disc(g, 7, 19, 2.2)            # hjul
-    disc(g, 16, 19, 2.2)
+    rrect(g, 2, 4, 20, 13, 3)      # kaross
+    rect(g, 4, 7, 4, 4, 0)         # rutor
+    rect(g, 9, 7, 4, 4, 0)
+    rect(g, 14, 7, 4, 4, 0)
+    rect(g, 4, 13, 15, 2, 0)       # midjelist
+    disc(g, 6, 18, 2.0)            # hjul
+    disc(g, 12, 18, 2.0)
+    disc(g, 18, 18, 2.0)
+    rect(g, 1, 20, 22, 1)          # rals
     return g
 
 
@@ -172,7 +175,7 @@ ICONS = [
     ("icon_palette_24",    icon_palette()),
     ("icon_pin_24",        icon_pin()),
     ("icon_wifi_24",       icon_wifi()),
-    ("icon_bus_24",        icon_bus()),
+    ("icon_train_24",      icon_train()),
     ("icon_gear_24",       icon_gear()),
 ]
 

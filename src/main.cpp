@@ -8,12 +8,9 @@
 #include <portal.h>
 #include <ui_carousel.h>
 #include <time.h>
-#include "esp_sleep.h"
-#include "esp_wifi.h"
-#include "driver/gpio.h"
 
 // Globalt Deklarerade Variabler
-volatile bool displayDisabled = false;  // Togglar panel, TRUE = PANEL AV
+volatile bool displayOn = true;   // brytarens läge: TRUE = panelen tänd
 volatile bool g_dataUpdated = false;
 volatile bool g_fetching = false;       // ApiTask fetchar just nu
 
@@ -69,35 +66,52 @@ static bool uiAnimating(void) {
 void InputTask(void *pv) {  // Pollar inputs
   (void)pv;
   for (;;) {
-    input_update();                   // Kollar input status
-    displayDisabled = input_onoff();  // MOMENTARY fysiskt, kommer bli switch sen
+    input_update();
+
+    // SW1 är en låsande vippströmbrytare, så nivån är sanningen — ingen
+    // toggle behövs. input_onoff() är sant när pinnen är låg.
+#if ONOFF_INVERT
+    displayOn = input_onoff();
+#else
+    displayOn = !input_onoff();
+#endif
     vTaskDelay(pdMS_TO_TICKS(1));  // Polling intervall
   }
 }
 
 void DisplayTask(void *pv) {  // ENDAST FÖR RENDERING
   (void)pv;
-  bool wasDisabled = false;
+  bool wasOff = false;
+  bool pendingFadeIn = false;
+
   for (;;) {
-    if (displayDisabled) {
-      display_stopDMA();
-      esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
-      gpio_wakeup_enable((gpio_num_t)INPUT1, GPIO_INTR_HIGH_LEVEL);
-      esp_sleep_enable_gpio_wakeup();
-      esp_light_sleep_start();
-      // Woke up — SW1 released
-      esp_wifi_set_ps(WIFI_PS_NONE);
-      display_resumeDMA();
-      wasDisabled = true;
-      vTaskDelay(pdMS_TO_TICKS(50));
+    if (!displayOn) {
+      // Avstängd betyder mörk panel, inte sömn: WiFi, portalen och
+      // hämtningarna fortsätter gå, så datan är färsk vid påslag.
+      display_off();
+      wasOff = true;
+
+      // Bilden behöver inte ritas om medan den tonar ner — DMA:n matar ut
+      // samma bildruta medan ljusstyrkan sjunker.
+      vTaskDelay(pdMS_TO_TICKS(display_fadeDone() ? 50 : 10));
       continue;
     }
-    display_on();
 
-    if (wasDisabled) {
+    if (wasOff) {
+      // Påslag: börja i mörker på bootskärmen, så logotypen är den första
+      // bilden som tonar fram. Toningen startar först när den faktiskt är
+      // ritad, annars hinner den gamla skärmen skymta fram ur svärtan.
+      display_fadeTo(0, 0);
+      ui.state = STATE_BOOT;
+      ui.bootStartMs = 0;
+      ui.scrollOffset = 0;
       ui.dirty = true;
-      wasDisabled = false;
+      pendingFadeIn = true;
+      wasOff = false;
     }
+
+    if (!pendingFadeIn) display_on();
+    display_fadeTick();
     if (!ui.dirty && !uiAnimating()) {
       vTaskDelay(pdMS_TO_TICKS(20));
       continue;
@@ -147,6 +161,11 @@ void DisplayTask(void *pv) {  // ENDAST FÖR RENDERING
     FRAME_PROFILE_END("menu");
     ui.dirty = false;
 
+    if (pendingFadeIn) {   // logotypen ligger i buffern nu — tänd
+      pendingFadeIn = false;
+      display_on();
+    }
+
     vTaskDelay(pdMS_TO_TICKS(uiAnimating() ? UI_FRAME_MS : 50));
   }
 }
@@ -155,7 +174,7 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
   (void)pv;
 
   for (;;) {
-    if (displayDisabled) {
+    if (!displayOn) {   // encodern ska inte göra något man inte kan se
       vTaskDelay(pdMS_TO_TICKS(20));
       continue;
     }

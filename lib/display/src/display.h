@@ -80,8 +80,12 @@ void display_drawRectOutline(int x, int y, int w, int h, uint16_t color);
 void display_setBrightness(uint8_t val);
 uint8_t display_getBrightness(void);
 void display_saveBrightness(void);
-void display_stopDMA(void);
-void display_resumeDMA(void);
+// Tidsstyrd toning. ms = 0 hoppar direkt. display_fadeTo() startar inte om en
+// toning som redan går mot samma mål.
+void    display_fadeTo(uint8_t target, uint16_t ms);
+void    display_fadeTick(void);   // en gång per varv i renderloopen
+bool    display_fadeDone(void);
+uint8_t display_fadeLevel(void);  // faktisk nivå nu, till skillnad från inställningen
 
 
 

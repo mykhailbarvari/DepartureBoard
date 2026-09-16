@@ -53,6 +53,13 @@
 
 // Inmatning
 #define LONG_PRESS_MS  600   // gräns mellan kort tryck (välj) och långt (tillbaka)
+
+// SW1 är en låsande vippströmbrytare. Vilket läge som drar pinnen låg beror på
+// inkopplingen, så polariteten sitter här — samma skäl som ENCODER_INVERT.
+#define ONOFF_INVERT   0     // 1 = vänd om brytaren känns bakvänd
+
+// Av- och påslagets toning. Gäller inte ljusstyrkemenyn, som hoppar direkt.
+#define DISPLAY_FADE_MS 600
 #define ENCODER_INVERT 0     // 1 = vänd encoderns riktning om den känns bakvänd
 
 // Avgångsdata äldre än så här räknas som inaktuell och flaggas i statusraden.
