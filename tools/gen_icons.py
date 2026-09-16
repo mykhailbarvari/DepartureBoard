@@ -113,20 +113,17 @@ def icon_wifi():
 
 
 # ----------------------------------------------------------------- AVGANGAR
-def icon_train():
-    """Tagvagn fran sidan: rutor, midjelist, tre hjul och en ralslinje.
-    Rutorna och listen stansas ur karossen (v=0) i stallet for att ritas
-    ovanpa - ikonen ar en 1-bits mask, sa pastritat hade bara fyllt igen."""
+def icon_busfront():
+    """Buss framifran: vindruta, midjelist, tva stralkastare och en marklinje.
+    Detaljerna stansas ur karossen (v=0) - ikonen ar en 1-bits mask, sa
+    pastritat hade bara fyllt igen formen."""
     g = blank()
-    rrect(g, 2, 4, 20, 13, 3)      # kaross
-    rect(g, 4, 7, 4, 4, 0)         # rutor
-    rect(g, 9, 7, 4, 4, 0)
-    rect(g, 14, 7, 4, 4, 0)
-    rect(g, 4, 13, 15, 2, 0)       # midjelist
-    disc(g, 6, 18, 2.0)            # hjul
-    disc(g, 12, 18, 2.0)
-    disc(g, 18, 18, 2.0)
-    rect(g, 1, 20, 22, 1)          # rals
+    rrect(g, 3, 2, 18, 18, 4)    # kaross
+    rect(g, 6, 5, 12, 6, 0)      # vindruta
+    rect(g, 5, 13, 14, 2, 0)     # midjelist
+    rect(g, 5, 16, 4, 2, 0)      # stralkastare
+    rect(g, 15, 16, 4, 2, 0)
+    rect(g, 2, 21, 20, 2)        # marklinje
     return g
 
 
@@ -175,7 +172,7 @@ ICONS = [
     ("icon_palette_24",    icon_palette()),
     ("icon_pin_24",        icon_pin()),
     ("icon_wifi_24",       icon_wifi()),
-    ("icon_train_24",      icon_train()),
+    ("icon_busfront_24",   icon_busfront()),
     ("icon_gear_24",       icon_gear()),
 ]
 
