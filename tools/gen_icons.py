@@ -42,6 +42,15 @@ def rect(g, x0, y0, w, h, v=1):
                 g[y][x] = v
 
 
+def rrect(g, x0, y0, w, h, r, v=1):
+    """Rektangel med rundade horn."""
+    rect(g, x0 + r, y0, w - 2 * r, h, v)
+    rect(g, x0, y0 + r, w, h - 2 * r, v)
+    for cx, cy in ((x0 + r, y0 + r), (x0 + w - r - 1, y0 + r),
+                   (x0 + r, y0 + h - r - 1), (x0 + w - r - 1, y0 + h - r - 1)):
+        disc(g, cx, cy, r, v)
+
+
 def line(g, x0, y0, x1, y1, v=1):
     n = int(max(abs(x1 - x0), abs(y1 - y0)) * 2) + 1
     for i in range(n + 1):
@@ -104,12 +113,17 @@ def icon_wifi():
 
 
 # ----------------------------------------------------------------- AVGANGAR
-def icon_list():
-    """Tre vagrata staplar av olika langd. Listsymbol framfor buss, eftersom
-    tavlan aven visar tunnelbana, pendeltag och sparvagn."""
+def icon_bus():
+    """Buss sedd fran sidan: rutor, midjelist och hjul. Rutorna och listen
+    stansas ur karossen (v=0) i stallet for att ritas ovanpa, sa de blir hal
+    nar ikonen ritas som en 1-bits mask."""
     g = blank()
-    for i, (x0, w) in enumerate(((3, 18), (3, 13), (3, 16), (3, 11))):
-        rect(g, x0, 4 + i * 5, w, 3)
+    rrect(g, 3, 3, 18, 15, 3)      # kaross
+    rect(g, 5, 6, 6, 5, 0)         # ruta vanster
+    rect(g, 13, 6, 6, 5, 0)        # ruta hoger
+    rect(g, 5, 13, 14, 2, 0)       # midjelist
+    disc(g, 7, 19, 2.2)            # hjul
+    disc(g, 16, 19, 2.2)
     return g
 
 
@@ -158,7 +172,7 @@ ICONS = [
     ("icon_palette_24",    icon_palette()),
     ("icon_pin_24",        icon_pin()),
     ("icon_wifi_24",       icon_wifi()),
-    ("icon_list_24",       icon_list()),
+    ("icon_bus_24",        icon_bus()),
     ("icon_gear_24",       icon_gear()),
 ]
 

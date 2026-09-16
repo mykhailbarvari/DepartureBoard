@@ -307,7 +307,7 @@ UiState ui = {
 // i fas 4, men tills portalen finns är detta enda sättet att ställa dem.
 // Ta bort posten (och STATE_STATION*) när portalen är i mål.
 static const CarouselItem kMenuItems[] = {
-  { icon_list_24,       "Avgångar"   },
+  { icon_bus_24,        "Avgångar"   },
   { icon_brightness_24, "Ljusstyrka" },
   { icon_palette_24,    "Färgtema"   },
   { icon_pin_24,        "Hållplats"  },   // TILLFÄLLIG — se ovan
