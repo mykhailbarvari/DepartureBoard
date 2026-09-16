@@ -6,3 +6,7 @@
 
 # Lokala hemligheter - se include/secrets.h.example
 include/secrets.h
+
+# Python-bytekod fran generatorerna i tools/
+__pycache__/
+*.pyc
