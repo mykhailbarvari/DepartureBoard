@@ -14,14 +14,8 @@
 #define NUM_COLS 2
 #define PANEL_CHAIN (NUM_ROWS * NUM_COLS)
 
-// WiFi configuration
-#define WIFI_SSID "***BORTTAGET***"
-#define WIFI_PASSWORD "***BORTTAGET***"
-
-// API configuration
-#define API_KEY "" // Behövs inte än
-
-#define SITE_ID 8032
+// Hemligheter (WiFi-creds, site-id) - se secrets.h.example
+#include "secrets.h"
 
 // Custom PIN Defines för vår ESP32-S3 Nano (Waveshare)
 #define PIN_R1   47  // D12
