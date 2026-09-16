@@ -23,7 +23,7 @@ WEB_OUT  = "lib/portal/src/portal_logo.h"
 WEB_FILL = "#e8eaed"
 
 PANEL_W, PANEL_H = 128, 64
-LOGO_SCALE = 0.8            # andel av panelen logotypen far uppta
+LOGO_SCALE = 0.4            # andel av panelen logotypen far uppta
 SS = 4                      # overprovtagning per axel -> 16 sampel per pixel
 FLATTEN = 12                # linjesegment per kubisk bezier
 

@@ -10,8 +10,8 @@
 //
 // Ritas med drawBitmapAlpha(), som skalar en given färg per pixel.
 
-#define UI_LOGO_W 98
-#define UI_LOGO_H 51
-#define UI_LOGO_BYTES (((UI_LOGO_W + 1) / 2) * UI_LOGO_H)  // 49 * 51 = 2499
+#define UI_LOGO_W 49
+#define UI_LOGO_H 26
+#define UI_LOGO_BYTES (((UI_LOGO_W + 1) / 2) * UI_LOGO_H)  // 25 * 26 = 650
 
 extern const uint8_t ui_logo[UI_LOGO_BYTES];
