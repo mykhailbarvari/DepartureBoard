@@ -7,6 +7,7 @@
 #include <settings.h>
 #include <portal.h>
 #include <ui_carousel.h>
+#include <demo.h>
 #include <time.h>
 
 // Globalt Deklarerade Variabler
@@ -182,10 +183,27 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
     // Läs EN gång per varv — händelserna konsumeras när de läses.
     // Gestmodell: kort tryck = välj, långt tryck = tillbaka ett steg.
     // Avgångsskärmen ÄR hemskärmen, så där finns inget att gå tillbaka till
-    // och långtrycket är reserverat för QR-koden (fas 4).
-    const PressEvent press = input_selectEvent();
-    const bool next = input_encoderNext();  // nedåt i listan / högre värde
-    const bool prev = input_encoderPrev();  // uppåt i listan / lägre värde
+    // och långtrycket visar QR-koden.
+    const PressEvent realPress = input_selectEvent();
+    const bool realNext = input_encoderNext();  // nedåt i listan / högre värde
+    const bool realPrev = input_encoderPrev();  // uppåt i listan / lägre värde
+
+    PressEvent press = realPress;
+    bool next = realNext;
+    bool prev = realPrev;
+
+    // I demoläge kommer händelserna från tidslinjen i stället, och behandlas
+    // av exakt samma kod nedan. Ett tryck avbryter; en oavsiktlig knuff på
+    // encodern gör det inte.
+    if (demo_active()) {
+      if (realPress != PRESS_NONE) {
+        demo_stop();
+        press = PRESS_NONE;
+        next = prev = false;
+      } else {
+        demo_input(&press, &next, &prev);
+      }
+    }
 
     switch (ui.state) {
       case STATE_BOOT:
@@ -391,7 +409,11 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
 
       case STATE_SYSTEM:
         {
-          if (press != PRESS_NONE) {
+          if (press == PRESS_SHORT) {   // enda valbara raden: starta demot
+            demo_start();
+            break;
+          }
+          if (press == PRESS_LONG) {
             ui.state = STATE_MENU;
             ui.selectedIndex = 5;
             ui.dirty = true;

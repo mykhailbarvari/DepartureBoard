@@ -521,22 +521,32 @@ void renderQR(void) {
 void renderSystem(void) {
   drawTitle("System");
 
+  const int ROW_H = 12;
+  const int TOP   = 14;
+
   char buf[40];
 
   const uint32_t up = millis() / 1000UL;
   snprintf(buf, sizeof(buf), "Uppe %luh %lum",
            (unsigned long)(up / 3600UL), (unsigned long)((up / 60UL) % 60UL));
-  drawString(2, 18, buf, COLOR_GRAY_90);
+  drawString(4, TOP, buf, COLOR_GRAY_50);
 
   snprintf(buf, sizeof(buf), "Heap %luk",
            (unsigned long)(ESP.getFreeHeap() / 1024UL));
-  drawString(2, 32, buf, COLOR_GRAY_90);
+  drawString(4, TOP + ROW_H, buf, COLOR_GRAY_50);
 
   snprintf(buf, sizeof(buf), "SL %s", api_fetchResultName(g_lastFetchResult));
-  drawString(2, 46, buf,
+  drawString(4, TOP + 2 * ROW_H, buf,
              (g_lastFetchResult == FETCH_OK || g_lastFetchResult == FETCH_UNCHANGED)
                ? COLOR_OK : COLOR_WARNING);
+
+  // Enda valbara raden på skärmen, så kort tryck startar den utan att något
+  // urval behöver flyttas. Långt tryck går tillbaka som överallt annars.
+  const int y = TOP + 3 * ROW_H;
+  display_fillRect(4, y + 4, 4, 4, g_settings.colourway);
+  drawString(12, y, "Starta demo", g_settings.colourway);
 }
+
 
 // ------------------------------------------- HÅLLPLATS (tillfällig, se fas 4)
 
