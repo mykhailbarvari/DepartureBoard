@@ -15,6 +15,9 @@
 #define PANEL_CHAIN (NUM_ROWS * NUM_COLS)
 
 // Hemligheter (WiFi-creds, site-id) - se secrets.h.example
+#if !defined(__has_include) || !__has_include("secrets.h")
+  #error "include/secrets.h saknas. Kopiera include/secrets.h.example till include/secrets.h och fyll i dina uppgifter."
+#endif
 #include "secrets.h"
 
 // Custom PIN Defines för vår ESP32-S3 Nano (Waveshare)
