@@ -115,12 +115,10 @@ void drawRow(int row, const Departure* departure, int yOffset) {
   int mins = departure_minsUntil(departure);
 
   char timeStr[8];
-  uint16_t timeColor = COLOR_WHITE;
 
   if (cancelled) {
     strncpy(timeStr, "Inst", sizeof(timeStr));
     timeStr[sizeof(timeStr) - 1] = 0;
-    timeColor = COLOR_ERROR;
   } else if (mins > 30 && departure->depTime[0]) {
     strncpy(timeStr, departure->depTime, sizeof(timeStr));
     timeStr[sizeof(timeStr) - 1] = 0;
@@ -130,10 +128,9 @@ void drawRow(int row, const Departure* departure, int yOffset) {
     snprintf(timeStr, sizeof(timeStr), "%d min", mins);
   }
 
-  // Försenad men inte inställd: gul tid. Tidiga avgångar lämnas orörda.
-  if (!cancelled && departure->delayMin > 0) timeColor = COLOR_WARNING;
-
-  drawTextRightAlignedInBox(X_MIN_START, X_MIN_END, y, timeStr, timeColor);
+  // Tiden är alltid vit. Inställda avgångar syns ändå: destinationen går röd
+  // och tiden ersätts av "Inst".
+  drawTextRightAlignedInBox(X_MIN_START, X_MIN_END, y, timeStr, COLOR_WHITE);
 
   clearClipX();
 
