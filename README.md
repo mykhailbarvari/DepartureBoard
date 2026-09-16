@@ -25,8 +25,50 @@ While searching for inspiration online, I stumbled upon the departure boards bui
 - Fetches real-time departure data from the [Trafiklab API](https://www.trafiklab.se/)
 - Drives two daisy-chained 64×64 P2 HUB75E LED matrix panels
 - Renders text on a high-refresh, DMA-driven LED display
-- Uses a rotary encoder to navigate a simple on-device UI menu
-- Runs separate FreeRTOS tasks for data fetching, display rendering, and UI logic
+- Counts down live: minutes are derived from each departure's timestamp at
+  render time, so the number ticks between API polls instead of sitting frozen
+- Colour-codes each line the way SL does (metro line colours, Blåbuss,
+  Pendeltåg), and flags delays, cancellations and service deviations
+- Says *why* the list is empty — no WiFi, SL not answering, or no departures —
+  instead of animating "Fetching..." forever
+- Uses a rotary encoder to navigate a carousel menu; short press selects,
+  long press goes back
+- Serves its own configuration portal. The panel shows a QR code: scan it to
+  reach the page and change stop, transport modes, direction, walk time,
+  brightness and colour theme — no reflashing
+- Runs separate FreeRTOS tasks for data fetching, display rendering, UI logic
+  and the web portal
+
+## Getting started
+
+```bash
+git clone https://github.com/mykhailbarvari/DepartureBoard.git
+cd DepartureBoard
+cp include/secrets.h.example include/secrets.h   # then fill in your details
+pio run --target upload
+```
+
+`include/secrets.h` is gitignored and holds the WiFi credentials and the
+starting stop id. The build stops with a clear message if it is missing.
+
+Credentials only need to be right once: after the first boot everything can be
+changed from the configuration portal instead.
+
+### First run
+
+If no WiFi credentials are stored, the board starts its own open network and
+shows a QR code. Scanning it joins that network, and the captive portal opens
+the configuration page by itself.
+
+Setup is deliberately two stage, because a phone attached to the board's own
+network has no internet and the stop search needs it:
+
+1. Pick your home network on the portal. The board connects and shows its
+   LAN address as a new QR code.
+2. Rejoin your home WiFi, scan that code, and search for your stop.
+
+To reconfigure a board that already has credentials, hold the encoder button
+while it powers up to force the setup network.
 
 ---
 
@@ -47,6 +89,10 @@ While searching for inspiration online, I stumbled upon the departure boards bui
 - FreeRTOS
 - [HUB75E LED display driver](https://github.com/mrcodetastic/ESP32-HUB75-MatrixPanel-DMA) (by mrcodetastic)  
 - ArduinoJson
+- [QRCode](https://github.com/ricmoo/QRCode) (by ricmoo)
+
+Library versions are pinned in `platformio.ini`, so a fresh clone builds
+without any local Arduino library folder.
 
 ---
 
