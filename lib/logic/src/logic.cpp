@@ -63,15 +63,42 @@ const Departure* departures_at(int visibleIndex) {
 }
 
 
+// SL:s egna linjefärger. group_of_lines är det mest specifika när det finns
+// ("Tunnelbanans gröna linje", "Blåbuss", "Pendeltåg"); annars trafikslaget.
+uint16_t departure_lineColor(const Departure* d) {
+  if (!d) return COLOR_WHITE;
+
+  const char* g = d->groupOfLines;
+  if (g[0]) {
+    if (strstr(g, "Blåbuss"))   return RGB565(  0, 122, 193);
+    if (strstr(g, "gröna"))     return RGB565(  0, 152,  95);
+    if (strstr(g, "röda"))      return RGB565(215,  25,  32);
+    if (strstr(g, "blå"))       return RGB565(  0, 122, 193);
+    if (strstr(g, "Pendeltåg")) return RGB565(220,  60, 150);
+  }
+
+  switch (d->transportMode) {
+    case TMODE_BUS:   return RGB565(217,  29,  41);  // SL:s röda stadsbuss
+    case TMODE_METRO: return RGB565(  0, 122, 193);
+    case TMODE_TRAIN: return RGB565(220,  60, 150);
+    case TMODE_TRAM:  return RGB565(230, 120,   0);
+    case TMODE_SHIP:  return RGB565(  0, 170, 190);
+    default:          return COLOR_WHITE;
+  }
+}
+
 void drawRow(int row, const Departure* departure, int yOffset) {
   int y = row * Y_OFFSET + yOffset;
 
-  // ===== LINE: max 3 siffror =====
+  const bool cancelled = (departure->state == DEP_CANCELLED);
+
+  // ===== LINE: max 3 siffror, i linjens egen färg =====
   setClipX(X_LINE_START, X_LINE_END);
 
-  char line3[4]; // 3 siffror + '\0'
+  char line3[4]; // 3 siffror + NUL
   lineCode3Digits(line3, sizeof(line3), departure->line);
-  drawString(X_LINE_START, y, line3, COLOR_WHITE);
+  drawString(X_LINE_START, y, line3,
+             cancelled ? COLOR_GRAY_25 : departure_lineColor(departure));
 
   // ===== DESTINATION: fit + abbreviation =====
   setClipX(X_DEST_START, X_DEST_END);
@@ -79,7 +106,7 @@ void drawRow(int row, const Departure* departure, int yOffset) {
   char destFit[64];
   int maxPx = (X_DEST_END - X_DEST_START + 1);
   fitTextToWidthPx(destFit, sizeof(destFit), departure->destination, maxPx);
-  drawString(X_DEST_START, y, destFit, g_colourway);
+  drawString(X_DEST_START, y, destFit, cancelled ? COLOR_ERROR : g_colourway);
 
   // ===== MINUTES / TIME: right-aligned =====
   setClipX(X_MIN_START, X_MIN_END);
@@ -87,18 +114,34 @@ void drawRow(int row, const Departure* departure, int yOffset) {
   int mins = departure_minsUntil(departure);
 
   char timeStr[8];
-  if (mins > 30 && departure->depTime[0]) {
+  uint16_t timeColor = COLOR_WHITE;
+
+  if (cancelled) {
+    strncpy(timeStr, "Inst", sizeof(timeStr));
+    timeStr[sizeof(timeStr) - 1] = 0;
+    timeColor = COLOR_ERROR;
+  } else if (mins > 30 && departure->depTime[0]) {
     strncpy(timeStr, departure->depTime, sizeof(timeStr));
-    timeStr[sizeof(timeStr) - 1] = '\0';
+    timeStr[sizeof(timeStr) - 1] = 0;
   } else if (mins <= 0) {
     strncpy(timeStr, "Nu", sizeof(timeStr));
   } else {
     snprintf(timeStr, sizeof(timeStr), "%d min", mins);
   }
-  drawTextRightAlignedInBox(X_MIN_START, X_MIN_END, y, timeStr, COLOR_WHITE);
+
+  // Försenad men inte inställd: gul tid. Tidiga avgångar lämnas orörda.
+  if (!cancelled && departure->delayMin > 0) timeColor = COLOR_WARNING;
+
+  drawTextRightAlignedInBox(X_MIN_START, X_MIN_END, y, timeStr, timeColor);
 
   clearClipX();
+
+  // Störningsmarkör i vänsterkanten (x=0 är oanvänt, X_LINE_START är 1).
+  if (departure->hasDeviation) {
+    display_fillRect(0, y + 4, 1, 4, COLOR_WARNING);
+  }
 }
+
 
 
 static void drawCentered(int y, const char* msg, uint16_t color) {
@@ -137,6 +180,70 @@ static void renderEmptyState(void) {
   }
 }
 
+// Statusraden visas BARA när den har något att säga — annars får avgångarna
+// använda alla fem raderna. Returnerar false när allt är i sin ordning.
+static bool buildStatusLine(char* out, size_t cap, uint16_t* color) {
+  uint32_t ageMin = 0;
+  bool haveAge = false;
+
+  if (g_lastSuccessMs != 0) {
+    ageMin  = (millis() - g_lastSuccessMs) / 60000UL;
+    haveAge = true;
+  }
+
+  switch (g_lastFetchResult) {
+    case FETCH_NO_WIFI:
+      *color = COLOR_ERROR;
+      snprintf(out, cap, "Ingen WiFi");
+      return true;
+
+    case FETCH_HTTP_ERR:
+    case FETCH_PARSE_ERR:
+      *color = COLOR_WARNING;
+      if (haveAge && ageMin > 0) snprintf(out, cap, "SL: fel, %lu min", (unsigned long)ageMin);
+      else                       snprintf(out, cap, "SL svarar inte");
+      return true;
+
+    default:
+      break;
+  }
+
+  // Svaren går igenom, men datan har hunnit bli gammal.
+  if (haveAge && ageMin >= STALE_MINUTES) {
+    *color = COLOR_WARNING;
+    snprintf(out, cap, "%lu min gammal", (unsigned long)ageMin);
+    return true;
+  }
+
+  return false;
+}
+
+// Antal avgangsrader som faktiskt far plats just nu. Statusraden stjal en,
+// och bade renderingen och scroll-klampningen maste rakna med samma tal.
+int departures_rowCapacity(void) {
+  char buf[32];
+  uint16_t c;
+  return buildStatusLine(buf, sizeof(buf), &c) ? (ROWS - 1) : ROWS;
+}
+
+// Tunn stapel i högerkanten: utan den syns det inte att listan fortsätter.
+static void drawScrollIndicator(int yTop, int total, int visible, int offset) {
+  if (total <= visible) return;
+
+  const int X = 127;            // X_MIN_END är 126, kolumnen är ledig
+  const int H = 64 - yTop;
+
+  int thumb = (H * visible) / total;
+  if (thumb < 3) thumb = 3;
+  if (thumb > H) thumb = H;
+
+  int maxOffset = total - visible;
+  int y = yTop + ((maxOffset > 0) ? ((H - thumb) * offset) / maxOffset : 0);
+
+  display_fillRect(X, yTop, 1, H,     COLOR_GRAY_10);
+  display_fillRect(X, y,    1, thumb, g_colourway);
+}
+
 void renderMainFromArray(int startIndex) {
   if (departureCount == 0) {
     renderEmptyState();
@@ -145,17 +252,34 @@ void renderMainFromArray(int startIndex) {
 
   int visible = departures_visibleCount();
   if (visible == 0) {
-    drawCentered(26, "No departures nearby", COLOR_GRAY_50);
+    drawCentered(26, "Inga avgangar i tid", COLOR_GRAY_50);
     return;
   }
 
+  char status[32];
+  uint16_t statusColor = COLOR_WARNING;
+  const bool showStatus = buildStatusLine(status, sizeof(status), &statusColor);
+
+  // Statusraden lägger beslag på radplats 0 och trycker ner avgångarna.
+  const int yOffset  = showStatus ? Y_OFFSET : 0;
+  const int rowCount = departures_rowCapacity();
+
+  if (showStatus) {
+    setClipX(0, 126);
+    drawString(1, 0, status, statusColor);
+    clearClipX();
+  }
+
   int row = 0;
-  for (int i = startIndex; i < visible && row < ROWS; i++, row++) {
+  for (int i = startIndex; i < visible && row < rowCount; i++, row++) {
     const Departure* d = departures_at(i);
     if (!d) break;
-    drawRow(row, d, (int)ui.bouncePixels);
+    drawRow(row, d, yOffset + (int)ui.bouncePixels);
   }
+
+  drawScrollIndicator(yOffset, visible, rowCount, startIndex);
 }
+
 
 void renderBoot(void) {
     drawBitmapMask(loadingscreen2, 128, 64, 0, 0, g_colourway);

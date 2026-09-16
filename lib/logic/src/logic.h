@@ -55,8 +55,12 @@ int departure_minsUntil(const Departure* d);
 // Aktuella filter (riktning + gångtid) på ett enda ställe, så att rendering
 // och scroll-klampning aldrig kan glida isär.
 bool departure_passesFilter(const Departure* d);
+
+// Linjens färg enligt SL:s egen färgsättning (group_of_lines/transport_mode).
+uint16_t departure_lineColor(const Departure* d);
 int  departures_visibleCount(void);
 const Departure* departures_at(int visibleIndex);
+int  departures_rowCapacity(void);
 
 void drawRow(int row, const Departure* departure, int yOffset = 0);
 void renderMainFromArray(int startIndex);

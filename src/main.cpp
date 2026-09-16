@@ -141,27 +141,34 @@ void DisplayTask(void *pv) {  // ENDAST FÖR RENDERING
 void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER HÄR. BESKRIVER VILKET STATE SOM ÄR AKTIVT
   (void)pv;
 
-  static ButtonTracker selectTracker = {false, false};
-
   for (;;) {
     if (displayDisabled) {
       vTaskDelay(pdMS_TO_TICKS(20));
       continue;
     }
 
-    // STATE MACHINE
+    // Läs EN gång per varv — händelserna konsumeras när de läses.
+    // Gestmodell: kort tryck = välj, långt tryck = tillbaka ett steg.
+    // Avgångsskärmen ÄR hemskärmen, så där finns inget att gå tillbaka till
+    // och långtrycket är reserverat för QR-koden (fas 4).
+    const PressEvent press = input_selectEvent();
+    const bool next = input_encoderNext();  // nedåt i listan / högre värde
+    const bool prev = input_encoderPrev();  // uppåt i listan / lägre värde
+
     switch (ui.state) {
       case STATE_BOOT:
         {
-
-          // Första gången vi kommer in i BOOT
           if (ui.bootStartMs == 0) {
             ui.bootStartMs = millis();
-            ui.dirty = true;  // ← rita boot EN gång
+            ui.dirty = true;  // rita boot EN gång
           }
 
-          // Efter BOOT_MS → gå till departures
-          if (millis() - ui.bootStartMs >= BOOT_MS) {
+          const uint32_t elapsed = millis() - ui.bootStartMs;
+          const bool dataReady = (g_lastFetchResult != FETCH_PENDING);
+
+          // Lämna bootskärmen så fort första hämtningen svarat, men låt
+          // logotypen synas åtminstone BOOT_MIN_MS.
+          if (elapsed >= BOOT_MS || (dataReady && elapsed >= BOOT_MIN_MS)) {
             ui.bootStartMs = 0;
             ui.state = STATE_DEPARTURES;
             ui.scrollOffset = 0;
@@ -178,31 +185,24 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
 
       case STATE_MENU:
         {
-          bool upPressed = input_encoderDown();
-          bool downPressed = input_encoderUp();
-          bool selectPressed = input_isPressed(selectTracker, input_select());
+          if (prev) { ui.selectedIndex--; mainMenuWrap(); ui.dirty = true; }
+          if (next) { ui.selectedIndex++; mainMenuWrap(); ui.dirty = true; }
 
-          if (upPressed) {
-            ui.selectedIndex--;
-            mainMenuWrap();
+          if (press == PRESS_LONG) {          // tillbaka till hemskärmen
+            ui.state = STATE_DEPARTURES;
+            ui.scrollOffset = 0;
             ui.dirty = true;
+            break;
           }
 
-          if (downPressed) {
-            ui.selectedIndex++;
-            mainMenuWrap();
-            ui.dirty = true;
-          }
-
-          if (selectPressed) {
-            // Handle menu selection
+          if (press == PRESS_SHORT) {
             switch (ui.selectedIndex) {
               case 0:
                 ui.state = STATE_DEPARTURES;
                 ui.scrollOffset = 0;
-                ui.dirty = true;
                 g_dataUpdated = false;
                 requestFetch();   // färsk data direkt när man öppnar listan
+                ui.dirty = true;
                 break;
 
               case 1:
@@ -228,18 +228,17 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
 
       case STATE_DISPLAY_MENU:
         {
-          bool upPressed     = input_encoderDown();
-          bool downPressed   = input_encoderUp();
-          bool selectPressed = input_isPressed(selectTracker, input_select());
+          if (prev && ui.selectedIndex > 0) { ui.selectedIndex--; ui.dirty = true; }
+          if (next && ui.selectedIndex < 2) { ui.selectedIndex++; ui.dirty = true; }
 
-          if (upPressed) {
-            if (ui.selectedIndex > 0) { ui.selectedIndex--; ui.dirty = true; }
-          }
-          if (downPressed) {
-            if (ui.selectedIndex < 2) { ui.selectedIndex++; ui.dirty = true; }
+          if (press == PRESS_LONG) {
+            ui.state = STATE_MENU;
+            ui.selectedIndex = 2;
+            ui.dirty = true;
+            break;
           }
 
-          if (selectPressed) {
+          if (press == PRESS_SHORT) {
             switch (ui.selectedIndex) {
               case 0:
                 ui.state = STATE_BRIGHTNESS;
@@ -263,18 +262,17 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
 
       case STATE_COLOURWAY:
         {
-          bool upPressed     = input_encoderDown();
-          bool downPressed   = input_encoderUp();
-          bool selectPressed = input_isPressed(selectTracker, input_select());
+          if (prev && ui.selectedIndex > 0) { ui.selectedIndex--; ui.dirty = true; }
+          if (next && ui.selectedIndex < 2) { ui.selectedIndex++; ui.dirty = true; }
 
-          if (upPressed) {
-            if (ui.selectedIndex > 0) { ui.selectedIndex--; ui.dirty = true; }
-          }
-          if (downPressed) {
-            if (ui.selectedIndex < 2) { ui.selectedIndex++; ui.dirty = true; }
+          if (press == PRESS_LONG) {   // ångra utan att spara
+            ui.state = STATE_DISPLAY_MENU;
+            ui.selectedIndex = 1;
+            ui.dirty = true;
+            break;
           }
 
-          if (selectPressed) {
+          if (press == PRESS_SHORT) {
             switch (ui.selectedIndex) {
               case 0: g_colourway = COLOR_TURQUOISE;  break;
               case 1: g_colourway = COLOR_ORANGE;     break;
@@ -293,16 +291,17 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
 
       case STATE_DEPARTURES:
         {
-          bool backPressed = input_isPressed(selectTracker, input_select());
-
-          if (backPressed) {
+          if (press == PRESS_SHORT) {
             ui.state = STATE_MENU;
             ui.dirty = true;
           }
+          // PRESS_LONG: reserverad för QR-koden, se fas 4.
 
           // Samma filterlogik som renderingen använder — en enda källa.
-          int filteredCount = departures_visibleCount();
-          int maxOffset = (filteredCount > ROWS) ? filteredCount - ROWS : 0;
+          // Radkapaciteten varierar: statusraden stjal en rad nar den visas.
+          const int filteredCount = departures_visibleCount();
+          const int capacity = departures_rowCapacity();
+          const int maxOffset = (filteredCount > capacity) ? filteredCount - capacity : 0;
 
           // Listan kan ha krympt sedan förra varvet (avgångar som gått).
           if (ui.scrollOffset > maxOffset) {
@@ -310,12 +309,8 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
             ui.dirty = true;
           }
 
-          if (input_encoderUp()) {
-            if (ui.scrollOffset < maxOffset) { ui.scrollOffset++; ui.dirty = true; }
-          }
-          if (input_encoderDown()) {
-            if (ui.scrollOffset > 0) { ui.scrollOffset--; ui.dirty = true; }
-          }
+          if (next && ui.scrollOffset < maxOffset) { ui.scrollOffset++; ui.dirty = true; }
+          if (prev && ui.scrollOffset > 0)         { ui.scrollOffset--; ui.dirty = true; }
 
           if (g_dataUpdated) {
             g_dataUpdated = false;
@@ -325,7 +320,7 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
           // Minuterna beräknas vid rendering, så bilden måste ritas om när
           // minuten växlar — annars står nedräkningen still ändå.
           static int lastMinute = -1;
-          int nowMinute = (int)(time(nullptr) / 60);
+          const int nowMinute = (int)(time(nullptr) / 60);
           if (nowMinute != lastMinute) {
             lastMinute = nowMinute;
             ui.dirty = true;
@@ -340,16 +335,17 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
 
       case STATE_STATION:
         {
-          bool selectPressed = input_isPressed(selectTracker, input_select());
+          if (next && ui.scrollOffset < 2) { ui.scrollOffset++; ui.dirty = true; }
+          if (prev && ui.scrollOffset > 0) { ui.scrollOffset--; ui.dirty = true; }
 
-          if (input_encoderUp()) {
-            if (ui.scrollOffset < 2) { ui.scrollOffset++; ui.dirty = true; }
-          }
-          if (input_encoderDown()) {
-            if (ui.scrollOffset > 0) { ui.scrollOffset--; ui.dirty = true; }
+          if (press == PRESS_LONG) {
+            ui.state = STATE_MENU;
+            ui.selectedIndex = 1;
+            ui.dirty = true;
+            break;
           }
 
-          if (selectPressed) {
+          if (press == PRESS_SHORT) {
             switch (ui.scrollOffset) {
               case 0:  // Walk time-editor
                 ui.selectedIndex = (int)g_walkMinutes;
@@ -388,9 +384,17 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
 
       case STATE_STATION_WALKTIME:
         {
-          bool confirmPressed = input_isPressed(selectTracker, input_select());
+          if (next && ui.selectedIndex < 60) { ui.selectedIndex++; ui.dirty = true; }
+          if (prev && ui.selectedIndex > 0)  { ui.selectedIndex--; ui.dirty = true; }
 
-          if (confirmPressed) {
+          if (press == PRESS_LONG) {   // ångra utan att spara
+            ui.state = STATE_STATION;
+            ui.scrollOffset = 0;
+            ui.dirty = true;
+            break;
+          }
+
+          if (press == PRESS_SHORT) {
             g_walkMinutes = ui.selectedIndex;
             Preferences prefs;
             prefs.begin("board", false);
@@ -400,36 +404,29 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
             ui.scrollOffset = 0;  // återgå till Walk-raden
             ui.dirty = true;
           }
-
-          if (input_encoderUp()) {
-            if (ui.selectedIndex < 60) { ui.selectedIndex++; ui.dirty = true; }
-          }
-          if (input_encoderDown()) {
-            if (ui.selectedIndex > 0) { ui.selectedIndex--; ui.dirty = true; }
-          }
         }
         break;
 
       case STATE_BRIGHTNESS:
         {
           const uint8_t STEP = 8;
-          bool backPressed = input_isPressed(selectTracker, input_select());
 
-          if (backPressed) {
-            display_saveBrightness();
-            ui.state = STATE_DISPLAY_MENU;
-            ui.selectedIndex = 0;
-            ui.dirty = true;
-          }
-
-          if (input_encoderUp()) {
+          if (next) {
             uint8_t cur = display_getBrightness();
             display_setBrightness(cur + STEP > 255 ? 255 : cur + STEP);
             ui.dirty = true;
           }
-          if (input_encoderDown()) {
+          if (prev) {
             uint8_t cur = display_getBrightness();
             display_setBrightness(cur > STEP ? cur - STEP : 0);
+            ui.dirty = true;
+          }
+
+          // Både kort och långt tryck lämnar skärmen; värdet sparas ändå.
+          if (press != PRESS_NONE) {
+            display_saveBrightness();
+            ui.state = STATE_DISPLAY_MENU;
+            ui.selectedIndex = 0;
             ui.dirty = true;
           }
         }
@@ -437,9 +434,9 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
 
       case STATE_SYSTEM_SETTINGS:
         {
-          bool backPressed = input_isPressed(selectTracker, input_select());
-          if (backPressed) {
+          if (press != PRESS_NONE) {
             ui.state = STATE_MENU;
+            ui.selectedIndex = 3;
             ui.dirty = true;
           }
         }

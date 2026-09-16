@@ -46,4 +46,14 @@
 #define INPUT3 6    // ENC1   - D3 (INPUT PULLUP)
 #define INPUT4 7    // ENC2   - D4 (INPUT PULLUP)
 
-#define BOOT_MS 10000
+// Bootskärmen: BOOT_MS är taket, men vi lämnar den så fort första
+// hämtningen svarat — dock aldrig före BOOT_MIN_MS, så logotypen hinner ses.
+#define BOOT_MS      2500
+#define BOOT_MIN_MS  800
+
+// Inmatning
+#define LONG_PRESS_MS  600   // gräns mellan kort tryck (välj) och långt (tillbaka)
+#define ENCODER_INVERT 0     // 1 = vänd encoderns riktning om den känns bakvänd
+
+// Avgångsdata äldre än så här räknas som inaktuell och flaggas i statusraden.
+#define STALE_MINUTES  2

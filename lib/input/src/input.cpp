@@ -15,8 +15,14 @@ struct ButtonState {
 
 static ButtonState s_onoff;
 static ButtonState s_select;
-static bool s_encUp = false;
-static bool s_encDown = false;
+static bool s_encNext = false;
+static bool s_encPrev = false;
+
+// Gestdetektering för encoderns tryckknapp
+static bool       s_selPrev      = false;
+static uint32_t   s_selDownMs    = 0;
+static bool       s_selLongFired = false;
+static PressEvent s_selEvent     = PRESS_NONE;
 
 // Debounce a button and return its stable state
 static bool debounceButton(bool raw, ButtonState &btn) {
@@ -54,7 +60,6 @@ static void input_updateEncoder(void) {
   if (aNow != s_aLast) {
     int b = digitalRead(INPUT4);
 
-    // Direction: change ++/-- here if reversed
     if (b != aNow) {
       s_encAccum++;
     } else {
@@ -64,15 +69,40 @@ static void input_updateEncoder(void) {
     s_aLast = aNow;
   }
 
-  // EC11E12-15P30: 30 detents/turn with 15 PPR => 2 A-edges per click
+  // En detent ska ge exakt ett steg. Känns det som att listan hoppar två
+  // steg per klick är ENCODER_STEPS_PER_CLICK för lågt för den här encodern.
   if (s_encAccum >= ENCODER_STEPS_PER_CLICK) {
-    s_encUp = true;
+    s_encNext = true;
     s_encAccum = 0;
   }
   if (s_encAccum <= -ENCODER_STEPS_PER_CLICK) {
-    s_encDown = true;
+    s_encPrev = true;
     s_encAccum = 0;
   }
+}
+
+// Bygger PRESS_SHORT/PRESS_LONG ovanpå den debouncade knappnivån.
+static void input_updateGestures(void) {
+  const bool now = s_select.stable;
+  const uint32_t t = millis();
+
+  if (now && !s_selPrev) {           // nedtryck
+    s_selDownMs = t;
+    s_selLongFired = false;
+  }
+
+  // Långtryck rapporteras direkt när tiden passeras, inte vid släpp.
+  if (now && !s_selLongFired && (t - s_selDownMs) >= LONG_PRESS_MS) {
+    s_selEvent = PRESS_LONG;
+    s_selLongFired = true;
+  }
+
+  // Släpp utan att långtrycket hunnit lösa ut = korttryck.
+  if (!now && s_selPrev && !s_selLongFired) {
+    s_selEvent = PRESS_SHORT;
+  }
+
+  s_selPrev = now;
 }
 
 void input_update(void) {
@@ -83,7 +113,7 @@ void input_update(void) {
   debounceButton(raw_onoff, s_onoff);
   debounceButton(raw_select, s_select);
 
-  // Update encoder
+  input_updateGestures();
   input_updateEncoder();
 }
 
@@ -96,22 +126,28 @@ bool input_select(void) {
   return s_select.stable;
 }
 
-// Encoder: consume so ControlLogicTask (20ms) doesn't miss events
-bool input_encoderUp(void) {
-  bool pressed = s_encUp;
-  s_encUp = false;
-  return pressed;
+PressEvent input_selectEvent(void) {
+  PressEvent e = s_selEvent;
+  s_selEvent = PRESS_NONE;
+  return e;
 }
 
-bool input_encoderDown(void) {
-  bool pressed = s_encDown;
-  s_encDown = false;
-  return pressed;
+// Encoder: consume so ControlLogicTask (20ms) doesn't miss events.
+// ENCODER_INVERT vänder hela konventionen på ett enda ställe.
+bool input_encoderNext(void) {
+#if ENCODER_INVERT
+  bool hit = s_encPrev; s_encPrev = false;
+#else
+  bool hit = s_encNext; s_encNext = false;
+#endif
+  return hit;
 }
 
-// Detect rising edge (press event) of a button
-bool input_isPressed(ButtonTracker &tracker, bool currentState) {
-  bool pressed = currentState && !tracker.lastState;
-  tracker.lastState = currentState;
-  return pressed;
+bool input_encoderPrev(void) {
+#if ENCODER_INVERT
+  bool hit = s_encNext; s_encNext = false;
+#else
+  bool hit = s_encPrev; s_encPrev = false;
+#endif
+  return hit;
 }
