@@ -2,6 +2,8 @@
 #include <logic.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 #include <display.h>
 #include <layout.h>
 #include <api.h>
@@ -12,6 +14,53 @@
 
 Departure departures[MAX_DEPARTURES];
 int departureCount = 0;
+
+
+// ------------------------------------------------------- DATA-HJÄLPFUNKTIONER
+
+// Minuterna räknas NU, inte vid hämtningen. Det är det som gör att siffran
+// tickar ner mellan hämtningarna istället för att stå still i 30 sekunder.
+int departure_minsUntil(const Departure* d) {
+  if (!d) return 0;
+
+  time_t now = time(nullptr);
+
+  // Klockan inte synkad än → falla tillbaka på SL:s egen display-sträng.
+  if (now <= 1000000UL || d->depEpoch == 0) {
+    if (strchr(d->display, ':')) return 999;  // "14:35" = långt fram
+    return atoi(d->display);
+  }
+
+  return (int)((d->depEpoch - now) / 60);
+}
+
+// Ett enda ställe för filtren, så att rendering och scroll-klampning aldrig
+// kan glida isär (de var två separata kopior tidigare).
+bool departure_passesFilter(const Departure* d) {
+  if (!d) return false;
+  if (g_directionCode != 0 && d->directionCode != (uint8_t)g_directionCode) return false;
+  if (g_walkMinutes > 0 && departure_minsUntil(d) < g_walkMinutes) return false;
+  return true;
+}
+
+int departures_visibleCount(void) {
+  int n = 0;
+  for (int i = 0; i < departureCount; i++) {
+    if (departure_passesFilter(&departures[i])) n++;
+  }
+  return n;
+}
+
+const Departure* departures_at(int visibleIndex) {
+  if (visibleIndex < 0) return nullptr;
+  int n = 0;
+  for (int i = 0; i < departureCount; i++) {
+    if (!departure_passesFilter(&departures[i])) continue;
+    if (n == visibleIndex) return &departures[i];
+    n++;
+  }
+  return nullptr;
+}
 
 
 void drawRow(int row, const Departure* departure, int yOffset) {
@@ -34,14 +83,17 @@ void drawRow(int row, const Departure* departure, int yOffset) {
 
   // ===== MINUTES / TIME: right-aligned =====
   setClipX(X_MIN_START, X_MIN_END);
+
+  int mins = departure_minsUntil(departure);
+
   char timeStr[8];
-  if (departure->minsUntil > 30 && departure->depTime[0]) {
+  if (mins > 30 && departure->depTime[0]) {
     strncpy(timeStr, departure->depTime, sizeof(timeStr));
     timeStr[sizeof(timeStr) - 1] = '\0';
-  } else if (departure->minsUntil == 0) {
+  } else if (mins <= 0) {
     strncpy(timeStr, "Nu", sizeof(timeStr));
   } else {
-    snprintf(timeStr, sizeof(timeStr), "%d min", departure->minsUntil);
+    snprintf(timeStr, sizeof(timeStr), "%d min", mins);
   }
   drawTextRightAlignedInBox(X_MIN_START, X_MIN_END, y, timeStr, COLOR_WHITE);
 
@@ -49,40 +101,59 @@ void drawRow(int row, const Departure* departure, int yOffset) {
 }
 
 
+static void drawCentered(int y, const char* msg, uint16_t color) {
+  int w = measureTextPx(msg);
+  drawString((128 - w) / 2, y, msg, color);
+}
 
+// Visar VARFÖR listan är tom istället för att animera "Fetching" i all evighet.
+static void renderEmptyState(void) {
+  switch (g_lastFetchResult) {
+    case FETCH_NO_WIFI:
+      drawCentered(26, "Ingen WiFi", COLOR_ERROR);
+      return;
 
-extern volatile int g_walkMinutes;
+    case FETCH_HTTP_ERR:
+    case FETCH_PARSE_ERR:
+      drawCentered(26, "SL svarar inte", COLOR_WARNING);
+      return;
+
+    case FETCH_EMPTY:
+      drawCentered(26, "Inga avgangar", COLOR_GRAY_50);
+      return;
+
+    case FETCH_PENDING:
+    default: {
+      // Har ännu inte fått något svar — animera medan vi väntar.
+      static const char* const dotFrames[] = { "", ".", "..", "..." };
+      int frame = (int)(millis() / 400) % 4;
+      const char* label = "Fetching";
+      int labelW = measureTextPx(label);
+      int x = (128 - labelW) / 2;
+      drawString(x,              26, label,             COLOR_GRAY_50);
+      drawString(x + labelW + 1, 26, dotFrames[frame],  COLOR_GRAY_50);
+      return;
+    }
+  }
+}
 
 void renderMainFromArray(int startIndex) {
   if (departureCount == 0) {
-    static const char* const dotFrames[] = { "", ".", "..", "..." };
-    int frame = (int)(millis() / 400) % 4;
-    const char* dots  = dotFrames[frame];
-    const char* label = "Fetching";
-    int labelW = measureTextPx(label);
-    int x = (128 - labelW) / 2;
-    int y = 26;
-    drawString(x,              y, label, COLOR_GRAY_50);
-    drawString(x + labelW + 1, y, dots,  COLOR_GRAY_50);
+    renderEmptyState();
+    return;
+  }
+
+  int visible = departures_visibleCount();
+  if (visible == 0) {
+    drawCentered(26, "No departures nearby", COLOR_GRAY_50);
     return;
   }
 
   int row = 0;
-  int passed = 0;  // antal som passerat filtret
-  for (int i = 0; i < departureCount && row < ROWS; i++) {
-    if (g_walkMinutes > 0 && departures[i].minsUntil < (uint16_t)g_walkMinutes) continue;
-
-    if (passed >= startIndex) {
-      drawRow(row, &departures[i], (int)ui.bouncePixels);
-      row++;
-    }
-    passed++;
-  }
-
-  if (passed == 0) {
-    const char* msg = "No departures nearby";
-    int w = measureTextPx(msg);
-    drawString((128 - w) / 2, 26, msg, COLOR_GRAY_50);
+  for (int i = startIndex; i < visible && row < ROWS; i++, row++) {
+    const Departure* d = departures_at(i);
+    if (!d) break;
+    drawRow(row, d, (int)ui.bouncePixels);
   }
 }
 
@@ -114,27 +185,27 @@ void renderMainMenu(void) {
 
   // Highlight (orange) – ENDAST selectable
   switch (ui.selectedIndex) {
-    case 0: 
-      drawBitmapMask(bitmap_mainMenu_Departures,     128, 64, 0, 0, g_colourway); 
+    case 0:
+      drawBitmapMask(bitmap_mainMenu_Departures,     128, 64, 0, 0, g_colourway);
       drawBitmapMask(bitmap_dot_6x6, 6, 6, 1, 15, g_colourway);
       break;
 
-    case 1: 
-      drawBitmapMask(bitmap_mainMenu_Station,        128, 64, 0, 0, g_colourway); 
+    case 1:
+      drawBitmapMask(bitmap_mainMenu_Station,        128, 64, 0, 0, g_colourway);
       drawBitmapMask(bitmap_dot_6x6, 6, 6, 1, 28, g_colourway);
       break;
 
-    case 2: 
-      drawBitmapMask(bitmap_mainMenu_Brightness,        128, 64, 0, 0, g_colourway); 
+    case 2:
+      drawBitmapMask(bitmap_mainMenu_Brightness,        128, 64, 0, 0, g_colourway);
       drawBitmapMask(bitmap_dot_6x6, 6, 6, 1, 41, g_colourway);
       break;
 
-    case 3: 
-      drawBitmapMask(bitmap_mainMenu_SystemSettings, 128, 64, 0, 0, g_colourway); 
+    case 3:
+      drawBitmapMask(bitmap_mainMenu_SystemSettings, 128, 64, 0, 0, g_colourway);
       drawBitmapMask(bitmap_dot_6x6, 6, 6, 1, 54, g_colourway);
       break;
   }
-  
+
 }
 
 void mainMenuWrap() {
@@ -269,7 +340,3 @@ void mainTask(void) {
     renderMainFromArray(0);
     endFrame();
 }
-
-
-
-

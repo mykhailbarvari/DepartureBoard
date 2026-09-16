@@ -25,4 +25,7 @@
 
 #define CHAR_W    6            // Bredd per tecken inklusive spacing
 
-#define MAX_DEPARTURES 30
+// Stora bytespunkter (Gullmarsplan 59, T-Centralen 68) ger fler avgangar an
+// 30 nu nar vi hamtar alla trafikslag och bada riktningarna och filtrerar
+// vid rendering istallet. Kostar ~90 byte per post.
+#define MAX_DEPARTURES 70

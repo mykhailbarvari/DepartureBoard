@@ -5,18 +5,32 @@
 #include <input.h>
 #include <config.h>
 #include <Preferences.h>
+#include <time.h>
 #include "esp_sleep.h"
 #include "esp_wifi.h"
 #include "driver/gpio.h"
 
 // Globalt Deklarerade Variabler
 volatile bool displayDisabled = false;  // Togglar panel, TRUE = PANEL AV
-volatile bool g_hasData = false;        // ApiTask sätter TRUE när data finns
 volatile bool g_dataUpdated = false;
 volatile bool g_fetching = false;       // ApiTask fetchar just nu
 volatile int g_walkMinutes   = 0;   // minuter promenad — filtrerar avgångar under detta
 volatile int g_directionCode = 0;   // 0 = alla, 1 = riktning 1, 2 = riktning 2
 volatile uint16_t g_colourway = COLOR_ORANGE;  // Accentfärg för UI
+
+// Task-handles deklareras före tasksen, så ControlLogicTask kan väcka ApiTask.
+TaskHandle_t hInput = NULL;
+TaskHandle_t hDisplay = NULL;
+TaskHandle_t hLogic = NULL;
+TaskHandle_t hApi = NULL;
+
+SemaphoreHandle_t gDeparturesMutex;
+
+// Väcker ApiTask direkt istället för att vänta ut hämtningsintervallet.
+// Används när användaren gör något som bör ge färsk data omedelbart.
+static void requestFetch(void) {
+  if (hApi) xTaskNotifyGive(hApi);
+}
 
 // ------FreeRTOS------ IN PROGRESS
 
@@ -25,7 +39,7 @@ void InputTask(void *pv) {  // Pollar inputs
   (void)pv;
   for (;;) {
     input_update();                   // Kollar input status
-    displayDisabled = input_onoff();  // MOMENTARY fysiskt, kommer bli switch sen 
+    displayDisabled = input_onoff();  // MOMENTARY fysiskt, kommer bli switch sen
     vTaskDelay(pdMS_TO_TICKS(1));  // Polling intervall
   }
 }
@@ -146,7 +160,7 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
             ui.dirty = true;  // ← rita boot EN gång
           }
 
-          // Efter 3 sek → gå till menu
+          // Efter BOOT_MS → gå till departures
           if (millis() - ui.bootStartMs >= BOOT_MS) {
             ui.bootStartMs = 0;
             ui.state = STATE_DEPARTURES;
@@ -188,6 +202,7 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
                 ui.scrollOffset = 0;
                 ui.dirty = true;
                 g_dataUpdated = false;
+                requestFetch();   // färsk data direkt när man öppnar listan
                 break;
 
               case 1:
@@ -285,12 +300,15 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
             ui.dirty = true;
           }
 
-          // Räkna filtrerade avgångar för korrekt scroll-klamp
-          int filteredCount = 0;
-          for (int i = 0; i < departureCount; i++) {
-            if (g_walkMinutes == 0 || departures[i].minsUntil >= (uint16_t)g_walkMinutes) filteredCount++;
-          }
+          // Samma filterlogik som renderingen använder — en enda källa.
+          int filteredCount = departures_visibleCount();
           int maxOffset = (filteredCount > ROWS) ? filteredCount - ROWS : 0;
+
+          // Listan kan ha krympt sedan förra varvet (avgångar som gått).
+          if (ui.scrollOffset > maxOffset) {
+            ui.scrollOffset = maxOffset;
+            ui.dirty = true;
+          }
 
           if (input_encoderUp()) {
             if (ui.scrollOffset < maxOffset) { ui.scrollOffset++; ui.dirty = true; }
@@ -304,8 +322,17 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
             ui.dirty = true;
           }
 
-          // Håll animationen aktiv medan data saknas eller fetch pågår
-          if (g_fetching || departureCount == 0) {
+          // Minuterna beräknas vid rendering, så bilden måste ritas om när
+          // minuten växlar — annars står nedräkningen still ändå.
+          static int lastMinute = -1;
+          int nowMinute = (int)(time(nullptr) / 60);
+          if (nowMinute != lastMinute) {
+            lastMinute = nowMinute;
+            ui.dirty = true;
+          }
+
+          // Håll "Fetching..."-animationen levande, men bara medan den visas.
+          if (g_fetching || g_lastFetchResult == FETCH_PENDING) {
             ui.dirty = true;
           }
         }
@@ -330,7 +357,9 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
                 ui.dirty = true;
                 break;
 
-              case 1:  // Toggla direction: 0→1→2→0, spara direkt
+              case 1:  // Toggla direction: 0→1→2→0, spara direkt.
+                // Riktningen filtreras numera vid rendering, så bytet slår
+                // igenom direkt utan att invänta en ny hämtning.
                 g_directionCode = (g_directionCode + 1) % 3;
                 {
                   Preferences prefs;
@@ -348,9 +377,6 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
                   prefs.putUChar("walkmin", (uint8_t)g_walkMinutes);
                   prefs.end();
                 }
-                departureCount = 0;
-                g_hasData = false;
-                g_dataUpdated = false;
                 ui.state = STATE_MENU;
                 ui.selectedIndex = 1;
                 ui.dirty = true;
@@ -425,34 +451,46 @@ void ControlLogicTask(void *pv) {  // ENDAST STATE MACHINE. INGEN RENDERING SKER
 
 void ApiTask(void *pv) {
   (void)pv;
+
+  const uint32_t INTERVAL_OK_MS = 30000;  // normalt hämtningsintervall
+  const uint32_t BACKOFF_MIN_MS = 5000;   // första omförsöket efter ett fel
+  const uint32_t BACKOFF_MAX_MS = 60000;  // taket för backoff
+
+  uint32_t backoffMs = BACKOFF_MIN_MS;
+  uint32_t waitMs    = 0;  // första varvet: hämta direkt
+
   for (;;) {
+    // Vaknar antingen när tiden gått ut eller när requestFetch() kallats.
+    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(waitMs));
+
     g_fetching = true;
-    bool changed = api_fetch_departures(SITE_ID, g_directionCode);
+    FetchResult r = api_fetch_departures(SITE_ID);
     g_fetching = false;
-    if (departureCount > 0) g_hasData = true;
-    if (changed) {
+
+    Serial.printf("[api] %s (%d avgangar)\n", api_fetchResultName(r), departureCount);
+
+    if (r == FETCH_NO_WIFI || r == FETCH_HTTP_ERR || r == FETCH_PARSE_ERR) {
+      // Fel: backa av exponentiellt istället för att hamra var 30:e sekund.
+      waitMs = backoffMs;
+      backoffMs = (backoffMs >= BACKOFF_MAX_MS / 2) ? BACKOFF_MAX_MS : backoffMs * 2;
+    } else {
+      backoffMs = BACKOFF_MIN_MS;
+      waitMs    = INTERVAL_OK_MS;
+    }
+
+    if (r == FETCH_OK || r == FETCH_EMPTY) {
       g_dataUpdated = true;
       if (ui.state == STATE_DEPARTURES) {
         ui.dirty = true;
       }
     }
-    vTaskDelay(pdMS_TO_TICKS(30000));
   }
 }
 
 
 
 
-
-
 // Setup
-TaskHandle_t hInput = NULL;
-TaskHandle_t hDisplay = NULL;
-TaskHandle_t hLogic = NULL;
-TaskHandle_t hApi = NULL;
-
-SemaphoreHandle_t gDeparturesMutex;
-
 void setup() {
   Serial.begin(115200);
 
