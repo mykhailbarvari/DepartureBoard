@@ -92,15 +92,6 @@ static uint8_t parseState(const char* s) {
   return DEP_STATE_OTHER;
 }
 
-static uint8_t parseMode(const char* s) {
-  if (!s)                  return TMODE_OTHER;
-  if (!strcmp(s, "BUS"))   return TMODE_BUS;
-  if (!strcmp(s, "METRO")) return TMODE_METRO;
-  if (!strcmp(s, "TRAIN")) return TMODE_TRAIN;
-  if (!strcmp(s, "TRAM"))  return TMODE_TRAM;
-  if (!strcmp(s, "SHIP"))  return TMODE_SHIP;
-  return TMODE_OTHER;
-}
 
 static void copyStr(char* dst, size_t cap, const char* src) {
   if (!cap) return;
@@ -173,14 +164,11 @@ FetchResult api_fetch_departures(int siteId) {
   JsonDocument filter;
   JsonObject f = filter["departures"].add<JsonObject>();
   f["line"]["designation"]       = true;
-  f["line"]["transport_mode"]    = true;
   f["destination"]               = true;
   f["display"]                   = true;
   f["direction_code"]            = true;
   f["state"]                     = true;
   f["expected"]                  = true;
-  f["scheduled"]                 = true;
-  f["stop_point"]["designation"] = true;
   f["stop_area"]["name"]         = true;
   // Bara importance_level — vi behöver veta ATT det finns en störning, inte
   // texten. Meddelandena är långa och skulle äta heap i onödan.
@@ -236,30 +224,18 @@ FetchResult api_fetch_departures(int siteId) {
     copyStr(out->line,         sizeof(out->line),         line);
     copyStr(out->destination,  sizeof(out->destination),  dest);
     copyStr(out->display,      sizeof(out->display),      disp);
-    copyStr(out->stopPoint,    sizeof(out->stopPoint),    d["stop_point"]["designation"] | "");
 
     out->directionCode = (uint8_t)(d["direction_code"] | 0);
     out->state         = parseState(d["state"] | (const char*)nullptr);
-    out->transportMode = parseMode(d["line"]["transport_mode"] | (const char*)nullptr);
     out->hasDeviation  = !d["deviations"].isNull() && d["deviations"].size() > 0;
 
-    const char* expected  = d["expected"]  | "";
-    const char* scheduled = d["scheduled"] | "";
-
-    out->depEpoch   = parseIsoLocal(expected);
-    out->schedEpoch = parseIsoLocal(scheduled);
+    const char* expected = d["expected"] | "";
+    out->depEpoch = parseIsoLocal(expected);
 
     // HH:MM ur expected, för visning när avgången ligger långt fram
     const char* tPtr = strchr(expected, 'T');
     if (tPtr && strlen(tPtr) >= 6) {
       snprintf(out->depTime, sizeof(out->depTime), "%.5s", tPtr + 1);
-    }
-
-    if (out->depEpoch && out->schedEpoch) {
-      long diff = (long)((out->depEpoch - out->schedEpoch) / 60);
-      if (diff >  127) diff =  127;
-      if (diff < -128) diff = -128;
-      out->delayMin = (int8_t)diff;
     }
 
     if (wantName) {

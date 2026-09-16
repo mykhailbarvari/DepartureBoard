@@ -16,28 +16,14 @@ typedef enum {
   DEP_STATE_OTHER
 } DepState;
 
-// SL:s "line.transport_mode". Styr färgkodningen i UI:t.
-typedef enum {
-  TMODE_BUS = 0,
-  TMODE_METRO,
-  TMODE_TRAIN,
-  TMODE_TRAM,
-  TMODE_SHIP,
-  TMODE_OTHER
-} TransportMode;
-
 // Struct för vår API-Array
 typedef struct {
   char     line[8];
   char     destination[32];
   char     display[8];      // råsträng från SL, t.ex. "5 min" eller "14:35"
   char     depTime[6];      // HH:MM från expected, t.ex. "14:35"
-  char     stopPoint[4];    // läge, t.ex. "A" (tomt på små hållplatser)
   time_t   depEpoch;        // faktisk avgångstid (expected)
-  time_t   schedEpoch;      // tidtabellstid (scheduled)
-  int8_t   delayMin;        // expected - scheduled i minuter, negativt = tidig
   uint8_t  state;           // DepState
-  uint8_t  transportMode;   // TransportMode
   uint8_t  directionCode;   // 1 eller 2
   bool     hasDeviation;    // minst en post i "deviations"
 } Departure;
@@ -64,7 +50,7 @@ void renderBoot(void);
 void renderMainMenu(void);      // karusellen
 void renderBrightness(void);
 void renderColourwayMenu(void);
-void renderQR(void);            // nätverksskärmen; QR-koden ritas i fas 4
+void renderQR(void);            // nätverksskärmen: QR-kod och IP
 void renderSystem(void);
 void renderStation(int navIndex, bool walkEditing, int directionCode, int walkMinutes);
 void mainMenuWrap();
